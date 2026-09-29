@@ -7,3 +7,5 @@ anyio~=4.0
 pycryptodome>=3.20,<4
 pyopenssl>=24.0
 multidict>=6.0
+# The manager's Letters tab: turns any picture into the 400x240 JPEG a letter needs
+pillow>=10.0

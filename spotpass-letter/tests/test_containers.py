@@ -50,9 +50,9 @@ def test_letter_round_trip():
 
 
 def test_letter_limits():
-	with pytest.raises(SystemExit):
+	with pytest.raises(ValueError):
 		make_letter.build_news_payload(make_letter.Letter("x" * 32, "message"))
-	with pytest.raises(SystemExit):
+	with pytest.raises(ValueError):
 		make_letter.build_news_payload(make_letter.Letter("title", "x" * 3000))
 
 

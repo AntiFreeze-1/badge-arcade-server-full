@@ -58,7 +58,7 @@ Windows: `netifaces` (pulled in by `anynet`) has no prebuilt wheel and needs a C
 compiler. The server doesn't use it, so install around it:
 
 ```sh
-pip install "pycryptodome>=3.20,<4" "anyio~=4.0" "pyopenssl>=24.0" "multidict>=6.0" netifaces-plus
+pip install "pycryptodome>=3.20,<4" "anyio~=4.0" "pyopenssl>=24.0" "multidict>=6.0" "pillow>=10.0" netifaces-plus
 pip install --no-deps "anynet~=1.2" "nintendoclients==5.0.0"
 ```
 

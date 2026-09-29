@@ -32,7 +32,7 @@ CLIENT_CERT = MITM_DIR / "mitmproxy-nintendo" / "client-certificates" / "CTR-com
 # The archived SpotPass files the tools start from (see README.md)
 SPOTPASS_FILES = ["data_v131-2022-12-29-09-40-NA.enc", "playinfo_v131-2022-12-29-09-40-NA.enc", "allbadge_v131.dat.boss"]
 # Modules the server and the SpotPass tools import
-MODULES = ["Crypto", "nintendo", "anynet", "anyio", "OpenSSL", "multidict"]
+MODULES = ["Crypto", "nintendo", "anynet", "anyio", "OpenSSL", "multidict", "PIL"]
 
 
 @dataclass
@@ -55,7 +55,7 @@ def install_packages() -> None:
 	if sys.platform == "win32":
 		# netifaces (an anynet dependency) needs a C compiler on Windows and the
 		# server doesn't use it, so install around it
-		subprocess.check_call(pip + ["pycryptodome>=3.20,<4", "anyio~=4.0", "pyopenssl>=24.0", "multidict>=6.0", "netifaces-plus"])
+		subprocess.check_call(pip + ["pycryptodome>=3.20,<4", "anyio~=4.0", "pyopenssl>=24.0", "multidict>=6.0", "pillow>=10.0", "netifaces-plus"])
 		subprocess.check_call(pip + ["--no-deps", "anynet~=1.2", "nintendoclients==5.0.0"])
 	else:
 		subprocess.check_call(pip + ["-r", str(SERVER_DIR / "requirements.txt")])

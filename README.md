@@ -70,7 +70,7 @@ done playing.
 |---|---|---|---|
 | A 3DS with Luma3DS custom firmware and **Nintendo Badge Arcade 1.3.1** installed | – | Everything | Your own console and copy of the game. |
 | **SpotPass files** | `other/` | Machines and free plays | The archived Badge Arcade SpotPass data (archive.org's *Nintendo Badge Arcade Data* item), or your own dumps. See the file list below. |
-| `boot9.bin` from your console | `spotpass-letter/` | Switching weeks, custom weeks, free plays | GodMode9: `[M:] MEMORY VIRTUAL` → `boot9.bin` → copy to `0:/gm9/out`. See [spotpass-letter/README.md](spotpass-letter/README.md#getting-the-key-from-your-own-console). |
+| `boot9.bin` from your console | `spotpass-letter/` | Switching weeks, custom weeks, free plays, letters | GodMode9: `[M:] MEMORY VIRTUAL` → `boot9.bin` → copy to `0:/gm9/out`. See [spotpass-letter/README.md](spotpass-letter/README.md#getting-the-key-from-your-own-console). |
 | The game's key (`badge_arcade_hmac.key`) | `spotpass-letter/` | Free plays | Dump the game's code with GodMode9 (title `0004000000153500` → *NCCH image options* → *Extract .code*), put `0004000000153500.dec.code` in `spotpass-letter/`, run `python find_sign_key.py 0004000000153500.dec.code`, and save the key it prints (32 hex digits) as `badge_arcade_hmac.key`. |
 | Your console's NEX password (`nex-keys.txt`) | `server/` | Usually nothing | Only if the server's log says *No NEX password known*: see [server/README.md](server/README.md#the-consoles-nex-password). |
 
@@ -113,6 +113,7 @@ current date as days pass.
 | **Machines** | Every archived Nintendo week and your custom weeks; pick one and press *Serve*. |
 | **Build a week** | Pick machine setups from every archived week (by series or one by one, with their badges listed) and build your own week. |
 | **Free plays** | Give free plays for the game date, and see which daily campaigns your save has collected. |
+| **Letters** | Write letters for the 3DS's Notifications applet, with a picture, and send them through SpotPass (experimental: see [spotpass-letter/README.md](spotpass-letter/README.md)). |
 | **Saves** | List, back up and reset saves. |
 
 After serving a week or giving free plays, fully close and reopen Badge Arcade.
@@ -154,7 +155,7 @@ tests and publishes the release that installs pick up.
 | `Badge Arcade Manager.bat`, `manager.py` | The manager window. |
 | `update.py`, `VERSION` | Checks for and installs new versions. |
 | [`server/`](server/README.md) | The server: NEX authentication and secure servers, save storage, SpotPass file hosting, and the proxy and hotspot (`server/mitm/`). |
-| [`spotpass-letter/`](spotpass-letter/README.md) | SpotPass tools used by the manager: switch weeks (`serve.py`), build custom weeks (`custom_week.py`), free plays (`free_plays.py`), find the game's signing key (`find_sign_key.py`), and an experimental SpotPass letter builder. |
+| [`spotpass-letter/`](spotpass-letter/README.md) | SpotPass tools used by the manager: switch weeks (`serve.py`), build custom weeks (`custom_week.py`), free plays (`free_plays.py`), letters (`letters.py`, `make_letter.py`, experimental), and find the game's signing key (`find_sign_key.py`). |
 
 ## Troubleshooting
 
