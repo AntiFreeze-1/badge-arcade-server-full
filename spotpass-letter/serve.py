@@ -47,8 +47,15 @@ SERVER_CONFIG = HERE.parent / "server" / "config.json"
 LIVE_WEEK = OTHER / "data_v131.dat.boss"
 LIVE_PLAYINFO = OTHER / "playinfo_v131.dat.boss"
 PLAYINFO_BASE = OTHER / "playinfo_v131-2022-12-29-09-40-NA.enc"
-# The "news" SpotPass task's file (news_v131.dat): letters for the Notifications applet
-LIVE_NEWS = OTHER / "news_v131.dat.boss"
+# The "news" SpotPass task's file: letters for the Notifications applet. Badge Arcade's
+# real Japanese news task served "news.dat" (SpotPass Archive); 3dbrew gives
+# "news_v131.dat" for the US one. The letter goes out under both names.
+LIVE_NEWS = OTHER / "news.dat.boss"
+NEWS_NAMES = ("news.dat.boss", "news_v131.dat.boss")
+
+
+def news_files() -> list[Path]:
+	return [LIVE_NEWS.with_name(name) for name in NEWS_NAMES]
 SHORT_NAMES = {"dec29": "data_v131-2022-12-29-09-40-NA.enc", "custom": "monster-hunter-mix"}
 
 
@@ -303,7 +310,8 @@ def serve_letter(letter: letters.SavedLetter, key: bytes) -> str:
 	letter.ns_data_id = now & 0xFFFFFFFF
 	letter.downloaded = None
 	letters.save_letter(letter)
-	put_live(container, LIVE_NEWS)
+	for path in news_files():
+		put_live(container, path)
 	state = load_state()
 	state["live_letter"] = letter.id
 	save_state(state)
@@ -313,8 +321,9 @@ def serve_letter(letter: letters.SavedLetter, key: bytes) -> str:
 
 def remove_letter() -> str:
 	state = load_state()
-	was_live = LIVE_NEWS.exists()
-	LIVE_NEWS.unlink(missing_ok=True)
+	was_live = any(path.exists() for path in news_files())
+	for path in news_files():
+		path.unlink(missing_ok=True)
 	state.pop("live_letter", None)
 	save_state(state)
 	return "The letter was taken down." if was_live else "No letter was live."

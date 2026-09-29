@@ -119,3 +119,27 @@ def test_daily_lineup_rotates_within_series():
 	lineup = custom_week.daily_lineup(setups, days=3, per_series=1)
 	assert lineup == [["Mro_1", "Zel_1"], ["Mro_2", "Zel_1"], ["Mro_3", "Zel_1"]]
 	assert custom_week.daily_lineup(setups, days=1, per_series=0) == [setups]
+
+
+def test_picture_flag_is_set_for_jpeg_and_mpo():
+	# All 155 real letters with a picture have byte 2 set, 3D (MPO) pictures included
+	frame = b"\xff\xc0\x00\x11\x08\x00\xf0\x01\x90" + bytes(20)  # 400x240
+	jpeg = b"\xff\xd8" + frame
+	mpo = b"\xff\xd8\xff\xe2\x00\x06MPF\x00" + frame  # APP2 "MPF" segment: a 3D picture
+	assert make_letter.jpeg_info(mpo) == (400, 240, True)
+	for image, flag in ((None, 0), (jpeg, 1), (mpo, 1)):
+		assert make_letter.build_news_payload(make_letter.Letter("T", "M", image=image))[2] == flag
+
+
+def test_compare_with_a_real_letter():
+	# A stand-in for Nintendo's container: same letter, but another datatype and
+	# a different flag byte, which compare must point out
+	letter = make_letter.Letter("A Message from Arcade Bunny!", "Hello!\nNew badges.", ns_data_id=0x9639)
+	news = bytearray(make_letter.build_news_payload(letter))
+	news[6] = 0
+	plain = make_letter.build_container_plain(bytes(news), make_letter.NEWS_PROGRAM_ID, 0x10001, 0x9639, 1)
+	rows = {name: (real, ours) for name, real, ours in make_letter.comparison(make_letter.encrypt_container(KEY, plain, 5), KEY)}
+	assert rows["payload: datatype"] == ("0x10001", "0x20001")
+	assert rows["payload: program ID"][0] == rows["payload: program ID"][1]
+	assert rows["letter: flags"][0] == rows["letter: flags"][1]  # rebuilt with the real letter's own flag values
+	assert rows["letter: header, title, message"][0] == "same bytes"

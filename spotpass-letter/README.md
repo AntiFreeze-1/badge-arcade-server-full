@@ -45,6 +45,8 @@ copies of the sources listed at the end).
    version 1, nsDataIds 0x69e4–0x9639 (Nintendo's server counter), the jump parameter
    set to the title ID (0 on one letter), and most have a 400×240 JPEG of about 43 KB
    (header flag "is JPEG" = 1). See `ref/real_badge_arcade_letters.csv`.
+4. The same dump has 178 letters in all, from about 20 games and the system. They all
+   use the layout below. See [Checked against real letters](#checked-against-real-letters).
 
 ### Container format (all big-endian)
 ```
@@ -91,20 +93,22 @@ layout, with the date-time inserted at 0x28 and the title moved to 0x30.
   The SHA-256 hashes are computed correctly.
 
 ### Delivery route
-- The `news` task URL (3dbrew):
+- The `news` task URL: 3dbrew gives
   `https://npdl.cdn.nintendowifi.net/p01/nsa/OvbmGLZ9senvgV3K/news/<lang>/news_v131.dat`
-  for USA (EUR code `J6la9Kj8iqTvAPOq`). `<lang>` is the 2-letter console language. The
-  exact letter case is unverified, but **that doesn't matter here**: the proxy
-  redirects any npdl request whose *file name* exists in `other/`. So
-  `other/news_v131.dat.boss` would be served for every region and language path.
+  for USA (EUR code `J6la9Kj8iqTvAPOq`), but Badge Arcade's Japanese news task really
+  served **`news.dat`** (SpotPass Archive: `JP/ja/news/filelist.txt` lists
+  `news.dat 585 1455082053`, a letter from Feb 2016 still live at shutdown). The file
+  name is what matters here: the proxy redirects any npdl request whose *file name*
+  exists in `other/`, whatever the region and language path. So a letter goes live as
+  both `other/news.dat.boss` and `other/news_v131.dat.boss`.
 - The proxy's policy list already lists `news` at HIGH with DefaultStop=false.
 - **The console has never requested `news_v131.dat` in the available logs**
   (mitm.log/server.log, 27 Sep 03:05–04:20). In that time it only fetched
   `FGONLYT/playinfo_v131.dat` and `data/data_v131.dat`, and only while the game was
   running. `news` is probably a background task that runs on the BOSS schedule, mostly in
   sleep mode. It may also not be registered at all, if SpotPass notifications were
-  declined or the task expired. Nintendo's own `news` tasksheet was empty at shutdown
-  (SpotPass Archive, `ref/archive/`), so no real file exists to copy.
+  declined or the task expired. Nintendo's US and EU `news` tasksheets were empty at
+  shutdown, but the Japanese one still had a letter (see above).
 - **Conclusion:** the `news` task is the right path, and the only one that goes through
   the existing server. Whether it fires is the biggest open question. Use
   `find-urls` on the BOSS system save to check whether the task is registered.
@@ -209,19 +213,22 @@ python make_letter.py build --boot9 path\to\boot9.bin ^
   container, for inspection.
 - Other options: `--datatype`, `--payload-program-id`, `--jump-param`, `--unknown-flag`,
   `--serial` and `--ns-data-id` let you try variants if the default doesn't work.
-- `inspect FILE --key-file ...` decrypts any container. The AES here is pure Python, so
-  large files like `data_v131` take minutes.
+- `inspect FILE --key-file ...` decrypts any container (quickly with pycryptodome,
+  slowly without it).
+- `compare --reference --boot9 boot9.bin` downloads the real Badge Arcade letter from
+  the SpotPass Archive and prints each of its fields next to what this script builds
+  for the same text and picture, marking any that differ.
 
 ## Delivering it
 1. Back up first: in GodMode9, copy `1:/data/<id0>/sysdata/00010035/00000000` (the
    news save) to the SD card. Having a NAND backup is wise too.
 2. Send it from the Letters tab (or `python serve.py letter`), or copy a file made
-   with `make_letter.py build` to `other/news_v131.dat.boss`. The server serves it and
+   with `make_letter.py build` to `other/news.dat.boss` and `other/news_v131.dat.boss`. The server serves it and
    the proxy picks up the new file list within 60 s. Nothing needs restarting.
 3. Leave the console in sleep mode with Wi-Fi on and the proxy and server running,
    possibly for hours. Watch mitm.log for
    `Redirecting https://npdl.cdn.nintendowifi.net/p01/nsa/OvbmGLZ9senvgV3K/news/...`
-   and server.log for `Sent SpotPass file news_v131.dat.boss`.
+   and server.log for `Sent SpotPass file news.dat.boss` (or `news_v131.dat.boss`).
 4. If it's downloaded but no letter appears, the likely causes are the signature check
    (not patched), a wrong payload layout, or the datatype. Try `--datatype 0x10001`.
    If it's never requested, the news task isn't registered or isn't running. Check it:
@@ -229,6 +236,44 @@ python make_letter.py build --boot9 path\to\boot9.bin ^
    `python make_letter.py find-urls <file>`.
 5. Undo: **Take letter down** (or delete the file from `other/`). You can delete the
    letter in the Notifications applet.
+
+## Checked against real letters
+
+**Saved letters** (archive.org, [Nintendo 3DS SpotPass Notifications](https://archive.org/details/nintendo-3ds-spot-pass-notifications)):
+178 letters from consoles' news saves, including 33 from Badge Arcade, others from about 20
+games, and system letters. They show the letter after the news module has stored it, and
+they agree with what we send:
+- **Header:** the same fields as ours. The module stores 8 zero bytes and the arrival
+  time at 0x20 (so the title moves from 0x20 to 0x30), as Azahar's `NotificationHeader`
+  does.
+- **Flags:** byte 0 valid is 1. Byte 1 is 1 = unread (3dbrew; the unopened letters
+  still have 1). Byte 3 is 1 for SpotPass (0 on system letters). Byte 6 is 1 on almost
+  all of them, Badge Arcade's included.
+- **Picture flag:** byte 2 is 1 on every letter with a picture (155), including the 16
+  with 3D (MPO) pictures, and 0 on every letter without one. 3dbrew calls it "is JPEG",
+  but it means "has a picture": `make_letter.py` used to set 0 for MPO pictures and now
+  sets 1.
+- **Pictures:** every one is 400×240, baseline, and at most 50 KB, like the ones the
+  manager makes.
+- **Text:** UTF-16LE without a BOM, ending with one NUL. With a link, the link follows
+  as UTF-8 with its own NUL, and byte 5 is 1; a link typed into the text is just text.
+  Titles are up to 31 characters and messages up to 2,920, within our limits.
+- **Source and jump:** the source is the sending title; the jump parameter is that title
+  (Badge Arcade), 0, or another title (e.g. a demo letter pointing at the game).
+
+**Sent letters** (SpotPass Archive, [3ds-boss-data](https://archive.org/details/3ds-boss-data)):
+57 `news` tasks (one per game and region) still had a letter of 50 KB or more when the servers closed, among them
+Badge Arcade's Japanese one. They show the letter as Nintendo sent it:
+- **Container header:** it's unencrypted and matches ours field by field: `boss`,
+  0x10001, the file size, the serial, `1, 0`, hash type 2, RSA type 2 and a 12-byte IV.
+  Nintendo's serials are small counters; ours are Unix times, and the console only needs
+  a new one.
+- **Size:** the letters are 54–58 KB, which is the 0x60 header, 0x1780 bytes of text and
+  a picture of about 50 KB after the container and payload headers.
+- **Still to check (encrypted):** the payload header needs the console's key. Run
+  `python make_letter.py compare --reference --boot9 boot9.bin` once. It shows the real
+  datatype (we use the guess 0x20001), the content flags and the payload's program ID
+  next to ours.
 
 ## Verified vs. unverified
 **Verified (by me, locally or from primary sources):**
@@ -244,13 +289,14 @@ python make_letter.py build --boot9 path\to\boot9.bin ^
   serve the file.
 
 **Unverified:**
-- The news payload layout. It comes from Rokkubro's unmerged Citra BOSS branch
+- The news payload layout as sent (the stored layout is confirmed, see above). It comes from Rokkubro's unmerged Citra BOSS branch
   (`SendNewsMessage`: 0x60 header with the title at 0x20, then a 0x1780 message, then
   the image), written from real downloads in 2023 but marked "Looks like". The meaning
   of the first 0x20 bytes, the little-endian byte order and the flag values come from
   the news.db header and the real letters.
 - The content datatype. `0x20001` is a guess: it is yellows8 bosstool's default, and
-  3dbrew mentions "0x20001 in eShop strings".
+  3dbrew mentions "0x20001 in eShop strings". `make_letter.py compare --reference`
+  settles it (see above).
 - Whether Luma3DS really bypasses the BOSS RSA check (Pretendo's claim).
 - Whether the `news` task is registered and when it runs, and the letter case of the
   language path (irrelevant here).
