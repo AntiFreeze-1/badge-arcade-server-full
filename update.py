@@ -38,7 +38,7 @@ VERSION_FILE = ROOT / VERSION_NAME
 REPOSITORY = "AntiFreeze-1/badge-arcade-server-full"
 BRANCH = "main"
 VERSION_URL = os.environ.get("BADGE_ARCADE_VERSION_URL",
-	f"https://raw.githubusercontent.com/{REPOSITORY}/{BRANCH}/{VERSION_NAME}")
+	f"https://raw.githubusercontent.com/{REPOSITORY}/refs/heads/{BRANCH}/{VERSION_NAME}")
 ZIP_URL = os.environ.get("BADGE_ARCADE_ZIP_URL", f"https://github.com/{REPOSITORY}/archive/refs/heads/{BRANCH}.zip")
 CHANGES_URL = f"https://github.com/{REPOSITORY}/commits/{BRANCH}"
 BACKUP_DIR = ROOT / "backups"
