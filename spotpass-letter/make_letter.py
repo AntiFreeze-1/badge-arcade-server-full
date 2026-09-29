@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Prototype: build a 3DS SpotPass "letter" (Notifications applet entry) for
-Nintendo Badge Arcade and wrap it in a BOSS container.
+"""Build a 3DS SpotPass "letter" (Notifications applet entry) for Nintendo
+Badge Arcade and wrap it in a BOSS container. EXPERIMENTAL: not yet confirmed
+on a console (see README.md).
 
-Standalone, standard library only (AES-128 is implemented below, so no pip
-packages are needed). Nothing here touches the Badge Arcade server; output goes
-to ./out/ unless --out says otherwise.
+The manager's Letters tab and "python serve.py letter" use this to put a
+letter live. This script builds and inspects letters without doing that:
+output goes to ./out/ unless --out says otherwise. It needs only the standard
+library (AES-128 is implemented below), and uses pycryptodome when installed.
 
 Subcommands
   build     Build the notification payload, and the encrypted BOSS container
@@ -49,6 +51,11 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+
+try:
+	from Crypto.Cipher import AES as _FastAES
+except ImportError:  # standard library only: use the pure-Python AES below
+	_FastAES = None
 
 HERE = Path(__file__).resolve().parent
 PROJECT = HERE.parent
@@ -162,7 +169,15 @@ class AES128:
 
 
 def aes128_ctr(key: bytes, iv: bytes, data: bytes) -> bytes:
-	"""AES-128-CTR with a 128-bit big-endian counter (same as OpenSSL/Node)."""
+	"""AES-128-CTR with a 128-bit big-endian counter (same as OpenSSL/Node).
+	Uses pycryptodome when it's installed (the server's packages include it),
+	and the pure-Python AES above otherwise."""
+	if _FastAES is not None:
+		return _FastAES.new(key, _FastAES.MODE_CTR, nonce=b"", initial_value=iv).encrypt(data)
+	return aes128_ctr_pure(key, iv, data)
+
+
+def aes128_ctr_pure(key: bytes, iv: bytes, data: bytes) -> bytes:
 	aes = AES128(key)
 	counter = int.from_bytes(iv, "big")
 	out = bytearray(len(data))
@@ -184,7 +199,8 @@ def aes_self_test() -> None:
 	iv = bytes.fromhex("f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff")
 	pt = bytes.fromhex("6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e51")
 	ct = bytes.fromhex("874d6191b620e3261bef6864990db6ce9806f66b7970fdff8617187bb9fffdff")
-	assert aes128_ctr(k, iv, pt) == ct, "AES-CTR SP800-38A vector failed"
+	assert aes128_ctr_pure(k, iv, pt) == ct, "AES-CTR SP800-38A vector failed"
+	assert aes128_ctr(k, iv, pt) == ct, "AES-CTR SP800-38A vector failed (pycryptodome)"
 
 
 # ---------------------------------------------------------------------------
@@ -202,11 +218,11 @@ def key_from_boot9(path: Path) -> bytes:
 	elif len(data) == 0x8000:
 		base = BOOT9_KEYAREA_PROT
 	else:
-		raise SystemExit(f"{path}: expected a 64 KiB boot9.bin or 32 KiB boot9_prot.bin, got {len(data)} bytes")
+		raise ValueError(f"{path}: expected a 64 KiB boot9.bin or 32 KiB boot9_prot.bin, got {len(data)} bytes")
 	off = base + BOOT9_SLOT38_NORMALKEY_REL
 	key = data[off:off + 16]
 	if not key_is_boss_key(key):
-		raise SystemExit(
+		raise ValueError(
 			f"{path}: the 16 bytes at {off:#x} don't match the BOSS key's published MD5.\n"
 			"Is this a retail boot9.bin dumped with GodMode9 / fastboot3DS? Use --key-file instead if you have the key elsewhere."
 		)
@@ -223,10 +239,10 @@ def key_from_file(path: Path) -> bytes:
 		m = re.search(r"slot0x38KeyN\s*=\s*([0-9a-fA-F]{32})", text)
 		hexstr = m.group(1) if m else re.sub(r"[^0-9a-fA-F]", "", text)
 		if len(hexstr) != 32:
-			raise SystemExit(f"{path}: expected 16 raw bytes, 32 hex digits or an aes_keys.txt with slot0x38KeyN")
+			raise ValueError(f"{path}: expected 16 raw bytes, 32 hex digits or an aes_keys.txt with slot0x38KeyN")
 		key = bytes.fromhex(hexstr)
 	if not key_is_boss_key(key):
-		raise SystemExit(f"{path}: this is not the 3DS BOSS key (MD5 mismatch with Pretendo's published hash)")
+		raise ValueError(f"{path}: this is not the 3DS BOSS key (MD5 mismatch with Pretendo's published hash)")
 	return key
 
 
@@ -274,7 +290,7 @@ class Letter:
 def jpeg_info(data: bytes) -> tuple[int, int, bool]:
 	"""Return (width, height, is_mpo) of a JPEG; raise if it isn't one."""
 	if data[:3] != b"\xff\xd8\xff":
-		raise SystemExit("image: not a JPEG file (must start with FF D8 FF)")
+		raise ValueError("image: not a JPEG file (must start with FF D8 FF)")
 	is_mpo = b"MPF\x00" in data[:0x2000]
 	i = 2
 	while i + 4 <= len(data):
@@ -290,35 +306,70 @@ def jpeg_info(data: bytes) -> tuple[int, int, bool]:
 			h, w = struct.unpack(">HH", data[i + 5:i + 9])
 			return w, h, is_mpo
 		i += 2 + seglen
-	raise SystemExit("image: couldn't find the JPEG frame header")
+	raise ValueError("image: couldn't find the JPEG frame header")
+
+
+TITLE_MAX = 31
+MESSAGE_MAX = 2999
+URL_MAX = 1024
+IMAGE_SIZE = (400, 240)
+IMAGE_RECOMMENDED_MAX = 50 * 1024
+
+
+def normalized_message(letter: Letter) -> str:
+	return letter.message.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def validate_letter(letter: Letter) -> tuple[list[str], list[str]]:
+	"""(errors, warnings) for a letter. Errors stop it from being built; warnings
+	are things the console may not like."""
+	errors, warnings = [], []
+	if not letter.title.strip():
+		errors.append("The letter needs a title.")
+	elif len(letter.title.encode("utf-16-le")) // 2 > TITLE_MAX:
+		errors.append(f"The title is {len(letter.title)} characters; the most is {TITLE_MAX}.")
+	message = normalized_message(letter)
+	if not message.strip():
+		errors.append("The letter needs a message.")
+	elif len(message) > MESSAGE_MAX:
+		errors.append(f"The message is {len(message)} characters; the most is {MESSAGE_MAX}.")
+	if letter.url:
+		if len(letter.url.encode("utf-8")) > URL_MAX:
+			errors.append(f"The link is longer than {URL_MAX} bytes.")
+		elif not letter.url.startswith(("http://", "https://")):
+			warnings.append("The link should start with http:// or https://.")
+	if not errors:
+		size = len(message.encode("utf-16-le")) + 2 + (len(letter.url.encode("utf-8")) + 1 if letter.url else 0)
+		if size > NEWS_MESSAGE_BYTES:
+			errors.append(f"The message and link are {size} bytes together; the most is {NEWS_MESSAGE_BYTES}.")
+	if letter.image:
+		if len(letter.image) > NEWS_IMAGE_MAX:
+			errors.append(f"The picture is {len(letter.image) // 1024} KB; the most is {NEWS_IMAGE_MAX // 1024} KB.")
+		else:
+			try:
+				w, h, _ = jpeg_info(letter.image)
+			except ValueError as e:
+				errors.append(f"The picture isn't usable: {e}.")
+			else:
+				if (w, h) != IMAGE_SIZE:
+					warnings.append(f"The picture is {w}x{h}; the Notifications applet expects 400x240.")
+				if len(letter.image) > IMAGE_RECOMMENDED_MAX:
+					warnings.append("The picture is over 50 KB (Nintendo's documented limit) and may be rejected.")
+	return errors, warnings
 
 
 def build_news_payload(letter: Letter) -> bytes:
+	errors, warnings = validate_letter(letter)
+	if errors:
+		raise ValueError(" ".join(errors))
+	letter.warnings.extend(warnings)
 	title16 = letter.title.encode("utf-16-le")
-	if len(title16) + 2 > NEWS_TITLE_BYTES:
-		raise SystemExit(f"title too long: {len(letter.title)} chars, max 31")
-	msg = letter.message.replace("\r\n", "\n").replace("\r", "\n")
-	message_bytes = msg.encode("utf-16-le") + b"\x00\x00"
-	if len(msg) + 1 > 3000:
-		raise SystemExit("message too long: max 2999 characters")
+	message_bytes = normalized_message(letter).encode("utf-16-le") + b"\x00\x00"
 	if letter.url:
-		url8 = letter.url.encode("utf-8")
-		if len(url8) > 1024:
-			raise SystemExit("URL too long: max 1024 bytes")
-		message_bytes += url8 + b"\x00"
-	if len(message_bytes) > NEWS_MESSAGE_BYTES:
-		raise SystemExit(f"message + URL is {len(message_bytes)} bytes, max {NEWS_MESSAGE_BYTES}")
-
+		message_bytes += letter.url.encode("utf-8") + b"\x00"
 	is_jpeg = 0
 	if letter.image:
-		if len(letter.image) > NEWS_IMAGE_MAX:
-			raise SystemExit(f"image is {len(letter.image)} bytes, max {NEWS_IMAGE_MAX}")
-		w, h, is_mpo = jpeg_info(letter.image)
-		if (w, h) != (400, 240):
-			letter.warnings.append(f"image is {w}x{h}; the Notifications applet expects 400x240")
-		if len(letter.image) > 50 * 1024:
-			letter.warnings.append("image is over 50 KB (Nintendo's documented limit); may be rejected")
-		is_jpeg = 0 if is_mpo else 1
+		is_jpeg = 0 if jpeg_info(letter.image)[2] else 1  # MPO (3D) pictures aren't flagged as JPEG
 
 	jump = letter.source_program_id if letter.jump_param is None else letter.jump_param
 	flags = bytes([
@@ -403,6 +454,20 @@ def encrypt_container(key: bytes, plain_body: bytes, serial: int, iv12: bytes | 
 	iv12 = iv12 if iv12 is not None else os.urandom(12)
 	header = build_boss_header(BOSS_HEADER_SIZE + len(plain_body), serial, iv12)
 	return header + aes128_ctr(key, iv12 + b"\x00\x00\x00\x01", plain_body)
+
+
+def build_letter_container(letter: Letter, key: bytes, serial: int | None = None, datatype: int = 0x20001,
+		program_id: int = NEWS_PROGRAM_ID) -> bytes:
+	"""The encrypted BOSS container for a letter, checked by decrypting it again.
+	serial defaults to the current Unix time (the console only takes a new serial)."""
+	payload = build_news_payload(letter)
+	serial = serial if serial is not None else int(time.time())
+	plain = build_container_plain(payload, program_id, datatype, letter.ns_data_id, letter.version)
+	container = encrypt_container(key, plain, serial)
+	_info, payloads = parse_container(container, key)
+	if len(payloads) != 1 or payloads[0].content != payload or payloads[0].ns_data_id != letter.ns_data_id:
+		raise ValueError("the built container didn't decrypt back to the same letter")
+	return container
 
 
 @dataclass
@@ -512,16 +577,13 @@ def cmd_build(args) -> int:
 		print(hexdump(payload, 0x80))
 		return 0
 
-	container = encrypt_container(key, plain, serial)
-	# self-check: decrypt what we just built and compare
-	info, payloads = parse_container(container, key)
-	assert len(payloads) == 1 and payloads[0].content == payload, "round trip failed"
-	assert payloads[0].program_id == program_id and payloads[0].ns_data_id == letter.ns_data_id
+	container = build_letter_container(letter, key, serial, datatype, program_id)
 	out.write_bytes(container)
-	print(f"\nBOSS container: serial {serial}, IV {info['iv']}, {len(container)} bytes")
+	print(f"\nBOSS container: serial {serial}, {len(container)} bytes")
 	print("Self-check: decrypted again with the same key, hashes OK, payload identical.")
 	print(f"Written to {out}")
-	print(f"\nTo deliver it, copy it to {OTHER_DIR}{os.sep}{out.name}")
+	print("\nTo put it live, use the manager's Letters tab or: python serve.py letter ... "
+		f"(or copy it to {OTHER_DIR}{os.sep}{out.name})")
 	return 0
 
 

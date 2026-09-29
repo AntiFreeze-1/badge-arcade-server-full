@@ -5,6 +5,9 @@
   python serve.py week custom         the custom week (Monster Hunter, Mega Man, ...)
   python serve.py week NAME|FILE      any week from 'weeks', or a data_v131 container
   python serve.py free-plays          10 free plays (or --plays N) for the game date (or --date)
+  python serve.py letter --title T --message M [--image PIC] [--url URL]
+                                      send a letter to the Notifications applet (experimental)
+  python serve.py letter --remove     take the live letter down
   python serve.py status              what's live and the next IDs
 
 Then fully close and reopen Badge Arcade. No server restart is needed (except
@@ -31,7 +34,8 @@ from pathlib import Path
 from Crypto.Cipher import AES
 
 from free_plays import daily_campaigns, pack, set_free_plays, unpack
-from make_letter import BOSS_HEADER_SIZE, CONTENT_HEADER_SIZE, key_from_boot9
+import letters
+from make_letter import BOSS_HEADER_SIZE, CONTENT_HEADER_SIZE, build_letter_container, key_from_boot9
 from repack import repack
 from custom_week import build_container, open_container, sarc_read, sarc_write
 
@@ -43,6 +47,8 @@ SERVER_CONFIG = HERE.parent / "server" / "config.json"
 LIVE_WEEK = OTHER / "data_v131.dat.boss"
 LIVE_PLAYINFO = OTHER / "playinfo_v131.dat.boss"
 PLAYINFO_BASE = OTHER / "playinfo_v131-2022-12-29-09-40-NA.enc"
+# The "news" SpotPass task's file (news_v131.dat): letters for the Notifications applet
+LIVE_NEWS = OTHER / "news_v131.dat.boss"
 SHORT_NAMES = {"dec29": "data_v131-2022-12-29-09-40-NA.enc", "custom": "monster-hunter-mix"}
 
 
@@ -281,6 +287,56 @@ def give_free_plays(plays: int, key: bytes, date: datetime.date | None = None) -
 	return message
 
 
+# ----- letters (experimental) -----
+
+def serve_letter(letter: letters.SavedLetter, key: bytes) -> str:
+	"""Saves the letter to the history and puts it live as the news file. It gets a new
+	SpotPass ID and serial each time (the current time), so the console treats every
+	send as a new letter."""
+	now = int(time.time())
+	container = build_letter_container(letter.to_letter(ns_data_id=now & 0xFFFFFFFF), key, serial=now)
+	letter.sent = datetime.datetime.fromtimestamp(now).isoformat(timespec="seconds")
+	letter.ns_data_id = now & 0xFFFFFFFF
+	letter.downloaded = None
+	letters.save_letter(letter)
+	put_live(container, LIVE_NEWS)
+	state = load_state()
+	state["live_letter"] = letter.id
+	save_state(state)
+	return (f"\"{letter.title}\" is live as SpotPass ID {letter.ns_data_id:#x}. The 3DS downloads it in the "
+		"background (often while in sleep mode with Wi-Fi on); it then appears in the Notifications applet.")
+
+
+def remove_letter() -> str:
+	state = load_state()
+	was_live = LIVE_NEWS.exists()
+	LIVE_NEWS.unlink(missing_ok=True)
+	state.pop("live_letter", None)
+	save_state(state)
+	return "The letter was taken down." if was_live else "No letter was live."
+
+
+def live_letter() -> letters.SavedLetter | None:
+	"""The letter that's live now (None if none, or if the news file wasn't put there by serve_letter)."""
+	letter_id = load_state().get("live_letter")
+	if not letter_id or not LIVE_NEWS.exists():
+		return None
+	try:
+		return letters.load_letter(letter_id)
+	except ValueError:
+		return None
+
+
+def mark_letter_downloaded(when: datetime.datetime | None = None) -> letters.SavedLetter | None:
+	"""Records that the server sent the live letter to a console. Returns it if it wasn't marked yet."""
+	letter = live_letter()
+	if letter is None or letter.downloaded:
+		return None
+	letter.downloaded = (when or datetime.datetime.now()).isoformat(timespec="seconds")
+	letters.save_letter(letter)
+	return letter
+
+
 def playinfo_campaigns(key: bytes) -> list[tuple[int, datetime.datetime, datetime.datetime, int]]:
 	_, payload = unpack(LIVE_PLAYINFO.read_bytes(), key)
 	when = lambda t: datetime.datetime.fromtimestamp(t, datetime.UTC)
@@ -311,6 +367,7 @@ def status(key: bytes) -> dict:
 		"current_date": current_game_date(),
 		"next_id": state["last_ns_data_id"] + 1,
 		"next_round": state["free_play_round"] + 1,
+		"letter": live_letter(),
 	}
 
 
@@ -325,8 +382,19 @@ def main() -> int:
 	plays = sub.add_parser("free-plays", help="hand out free plays for the game date")
 	plays.add_argument("--plays", type=int, default=10)
 	plays.add_argument("--date", type=datetime.date.fromisoformat, help="day to give them on (default: the game date)")
+	letter = sub.add_parser("letter", help="send a letter to the Notifications applet (experimental)")
+	letter.add_argument("--title", help="at most 31 characters")
+	letter.add_argument("--message", help="the text; \\n for a new line")
+	letter.add_argument("--message-file", type=Path, help="a UTF-8 text file with the message")
+	letter.add_argument("--url", default="", help="an optional link")
+	letter.add_argument("--image", type=Path, help="an optional picture (any size; made into a 400x240 JPEG)")
+	letter.add_argument("--region", choices=sorted(letters.TITLE_IDS), default="USA")
+	letter.add_argument("--remove", action="store_true", help="take the live letter down instead")
 	sub.add_parser("status", help="show what's live")
 	args = parser.parse_args()
+	if args.command == "letter" and args.remove:
+		print(remove_letter())
+		return 0
 	key = boss_key()
 
 	if args.command == "weeks":
@@ -340,6 +408,11 @@ def main() -> int:
 		print(serve_week(found, key))
 	elif args.command == "free-plays":
 		print(give_free_plays(args.plays, key, args.date))
+	elif args.command == "letter":
+		message = args.message_file.read_text(encoding="utf-8") if args.message_file else (args.message or "").replace("\\n", "\n")
+		saved = letters.SavedLetter("", args.title or "", message, args.url, args.region,
+			image=letters.prepare_image(args.image) if args.image else None)
+		print(serve_letter(saved, key))
 	elif args.command == "status":
 		s = status(key)
 		print(f"Machines: {s['week']}, {s['week_machines']} machines, {s['week_dates'][0]} to {s['week_dates'][1]} "
@@ -347,9 +420,15 @@ def main() -> int:
 		print(f"Free plays: SpotPass ID {s['playinfo_id']:#x}, "
 			+ ", ".join(f"{b:%b %d}: {p}" for _, b, _, p in s["campaigns"]))
 		print(f"Game date: {s['game_date'] or 'current date'} ({s['current_date']})")
+		live = s["letter"]
+		print(f"Letter: \"{live.title}\", sent {live.sent}" + (f", downloaded {live.downloaded}" if live.downloaded else
+			", not downloaded yet") if live else "Letter: none")
 		print(f"Next SpotPass ID: {s['next_id']:#x}, next free-play round: {s['next_round']}")
 	return 0
 
 
 if __name__ == "__main__":
-	sys.exit(main())
+	try:
+		sys.exit(main())
+	except ValueError as e:  # a bad boot9.bin, key or input: no traceback
+		sys.exit(f"error: {e}")

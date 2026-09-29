@@ -20,7 +20,9 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def run_servers(config: Config):
 	storage = Storage(config.data_path)
-	s = make_settings(config)
+	if pruned := storage.prune_uploads():
+		logger.info("Forgot %i unfinished upload(s) older than a day", pruned)
+	s =make_settings(config)
 
 	auth_servers = [AuthenticationServer(s, config, storage)]
 	secure_servers = [

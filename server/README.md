@@ -58,7 +58,7 @@ Windows: `netifaces` (pulled in by `anynet`) has no prebuilt wheel and needs a C
 compiler. The server doesn't use it, so install around it:
 
 ```sh
-pip install pycryptodome "anyio~=4.0" pyopenssl multidict netifaces-plus pytest
+pip install "pycryptodome>=3.20,<4" "anyio~=4.0" "pyopenssl>=24.0" "multidict>=6.0" "pillow>=10.0" netifaces-plus
 pip install --no-deps "anynet~=1.2" "nintendoclients==5.0.0"
 ```
 
@@ -275,8 +275,13 @@ The server also keeps the previous version of each save file in
 ## Tests
 
 ```sh
+pip install -r requirements-dev.txt
 python -m pytest tests
+cd ../spotpass-letter && python -m pytest tests
 ```
+
+GitHub Actions runs these on Windows and Linux for every push and pull
+request, along with `ruff check .` from the project folder.
 
 `tests/test_end_to_end.py` starts the whole server on localhost and uses
 NintendoClients as a stand-in 3DS over both PRUDP v1 and v0. It covers NASC,
@@ -287,6 +292,11 @@ the Shop methods, and SpotPass file serving and revalidation. It also covers
 and derived keys), rejecting unknown accounts, and the save tools, including
 a fresh first-time setup after `reset`. `tests/test_hotspot.py` covers the
 hotspot mode's hosts-file editing and DNS check, and `--public-host`.
+`tests/test_units.py` covers the save tools' FreePlayData helpers, cleaning up
+unfinished uploads and the HTTP server's request size limit, and
+`tests/test_update.py` covers `update.py` (without the network).
+`spotpass-letter/tests/` covers the SpotPass container, free plays and SARC
+code with throwaway keys and made-up data.
 
 The proxy addon has an offline self-test (it needs mitmproxy, so it runs with
 the proxy's Python):

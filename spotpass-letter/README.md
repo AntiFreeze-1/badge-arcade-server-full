@@ -1,13 +1,14 @@
-# SpotPass letter prototype (Badge Arcade)
+# SpotPass tools and letters (Badge Arcade)
 
-This is an experiment: send a "letter" (an entry in the 3DS Notifications applet)
-to your own console through the existing local Badge Arcade setup. Nothing here is
-wired into `server/`. The script only writes to `spotpass-letter/out/`, and it
-refuses to write into `other/`.
+The tools the manager uses to put SpotPass files live: weekly machines, free
+plays, and **letters**, entries in the 3DS Notifications applet like the ones
+Nintendo sent from Badge Arcade.
 
-**Status:** the payload and container builder is done and self-tested. **It has not
-been tested on a console.** Two parts of the format are informed guesses (see
-[Verified vs. unverified](#verified-vs-unverified)).
+**Letters are experimental.** Building them is done and tested, and the manager's
+**Letters** tab sends them through the server. **They haven't been confirmed on a
+console yet.** Two parts of the format are informed guesses (see
+[Verified vs. unverified](#verified-vs-unverified)), and the 3DS may never run the
+SpotPass task that fetches them (see [Delivery route](#delivery-route)).
 
 ## Files
 
@@ -18,7 +19,8 @@ been tested on a console.** Two parts of the format are informed guesses (see
 | `free_plays.py` | Rebuild `playinfo` with a different number of daily free plays. |
 | `repack.py` | Re-issue a SpotPass file under a new NsData ID. |
 | `find_sign_key.py` | Find the game's signing key in its dumped code. |
-| `make_letter.py` | The SpotPass letter prototype. Python 3.12, standard library only (it has its own AES-128). Subcommands: `build`, `selftest`, `inspect`, `key`, `find-urls`. |
+| `letters.py` | Letters for the manager: turns any picture into the 400×240 JPEG a letter needs, and keeps the history of your letters in `out/letters/`. |
+| `make_letter.py` | Builds and inspects letters (`build`, `selftest`, `inspect`, `key`, `find-urls`). Standard library only (it has its own AES-128), faster with pycryptodome. |
 
 Not in the repository (you provide or generate them, see the main README):
 `boot9.bin`, `badge_arcade_hmac.key`, the game's `.code`, `serve_state.json`,
@@ -147,7 +149,37 @@ Azahar/Citra emulators ask for.
    If you already have an Azahar/Citra `aes_keys.txt` containing `slot0x38KeyN=...`,
    `--key-file aes_keys.txt` also works.
 
-## Making a letter
+## Sending a letter
+
+In the manager, open the **Letters** tab:
+
+1. Write a title (up to 31 characters) and a message (up to 2,999). A link is
+   optional. Pick the region of your copy of Badge Arcade.
+2. Optionally choose a picture. Any picture works: it's scaled and cropped to
+   400×240 and saved as a JPEG under 50 KB, and the tab shows a preview.
+3. Press **Send to 3DS**. The letter goes live as `other/news_v131.dat.boss`,
+   with a new SpotPass ID, and is kept in the list on the left. **Save draft**
+   keeps it without sending it.
+4. With the server and proxy running, leave the 3DS in sleep mode with Wi-Fi on.
+   When the server sends the letter, the tab says it was downloaded, and it
+   should appear in the Notifications applet.
+5. **Take letter down** removes it from the server. Your letters stay in the list;
+   pick one to send it again (a sent letter becomes a new letter when you change it).
+
+Back up the news save first (step 1 of [Delivering it](#delivering-it)).
+
+From the command line:
+
+```sh
+python serve.py letter --title "A Message from Arcade Bunny!" --message-file letter.txt --image bunny.png
+python serve.py letter --remove
+python serve.py status
+```
+
+## Making a letter by hand
+`make_letter.py build` writes a letter to `out/` without putting it live, which
+is useful for trying variants of the format:
+
 ```bat
 cd spotpass-letter
 python make_letter.py selftest --boot9 path\to\boot9.bin
@@ -172,8 +204,9 @@ python make_letter.py build --boot9 path\to\boot9.bin ^
 ## Delivering it
 1. Back up first: in GodMode9, copy `1:/data/<id0>/sysdata/00010035/00000000` (the
    news save) to the SD card. Having a NAND backup is wise too.
-2. Copy `out/news_v131.dat.boss` to `other/`. The server serves it and the proxy picks
-   up the new file list within 60 s. Nothing needs restarting.
+2. Send it from the Letters tab (or `python serve.py letter`), or copy a file made
+   with `make_letter.py build` to `other/news_v131.dat.boss`. The server serves it and
+   the proxy picks up the new file list within 60 s. Nothing needs restarting.
 3. Leave the console in sleep mode with Wi-Fi on and the proxy and server running,
    possibly for hours. Watch mitm.log for
    `Redirecting https://npdl.cdn.nintendowifi.net/p01/nsa/OvbmGLZ9senvgV3K/news/...`
@@ -183,8 +216,8 @@ python make_letter.py build --boot9 path\to\boot9.bin ^
    If it's never requested, the news task isn't registered or isn't running. Check it:
    copy `1:/data/<id0>/sysdata/00010034/00000000` (the BOSS save) and run
    `python make_letter.py find-urls <file>`.
-5. Undo: delete the file from `other/`. You can delete the letter in the Notifications
-   applet.
+5. Undo: **Take letter down** (or delete the file from `other/`). You can delete the
+   letter in the Notifications applet.
 
 ## Verified vs. unverified
 **Verified (by me, locally or from primary sources):**

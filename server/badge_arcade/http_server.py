@@ -35,6 +35,10 @@ BOSS_REGIONS = {
 	"j0ITmVqVgfUxe0O9": "JPN",
 }
 
+# Largest POST body accepted. Badge Arcade's saves and logins are a few KB;
+# this only stops a bad request from filling the PC's memory.
+MAX_BODY = 4 * 1024 * 1024
+
 
 def nasc_encode(value: str | bytes) -> str:
 	if isinstance(value, str):
@@ -141,8 +145,22 @@ class RequestHandler(BaseHTTPRequestHandler):
 				shutil.copyfileobj(f, self.wfile)
 		return True
 
-	def read_body(self) -> bytes:
-		length = int(self.headers.get("Content-Length", 0))
+	def read_body(self) -> bytes | None:
+		"""The request body, or None after answering with an error."""
+		try:
+			length = int(self.headers.get("Content-Length", 0))
+		except ValueError:
+			length = -1
+		if length < 0:
+			logger.warning("POST %s with a bad Content-Length", self.path)
+			self.close_connection = True
+			self.send_body(400, b"Bad Content-Length")
+			return None
+		if length > MAX_BODY:
+			logger.warning("POST %s is %i bytes, more than the %i allowed", self.path, length, MAX_BODY)
+			self.close_connection = True
+			self.send_body(413, b"Request too large")
+			return None
 		return self.rfile.read(length) if length else b""
 
 	# ----- routing -----
@@ -156,6 +174,8 @@ class RequestHandler(BaseHTTPRequestHandler):
 	def do_POST(self):
 		path = urlsplit(self.path).path
 		body = self.read_body()
+		if body is None:
+			return
 		try:
 			if path == "/ac":
 				self.handle_nasc(body)

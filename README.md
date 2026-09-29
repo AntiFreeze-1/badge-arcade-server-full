@@ -70,7 +70,7 @@ done playing.
 |---|---|---|---|
 | A 3DS with Luma3DS custom firmware and **Nintendo Badge Arcade 1.3.1** installed | – | Everything | Your own console and copy of the game. |
 | **SpotPass files** | `other/` | Machines and free plays | The archived Badge Arcade SpotPass data (archive.org's *Nintendo Badge Arcade Data* item), or your own dumps. See the file list below. |
-| `boot9.bin` from your console | `spotpass-letter/` | Switching weeks, custom weeks, free plays | GodMode9: `[M:] MEMORY VIRTUAL` → `boot9.bin` → copy to `0:/gm9/out`. See [spotpass-letter/README.md](spotpass-letter/README.md#getting-the-key-from-your-own-console). |
+| `boot9.bin` from your console | `spotpass-letter/` | Switching weeks, custom weeks, free plays, letters | GodMode9: `[M:] MEMORY VIRTUAL` → `boot9.bin` → copy to `0:/gm9/out`. See [spotpass-letter/README.md](spotpass-letter/README.md#getting-the-key-from-your-own-console). |
 | The game's key (`badge_arcade_hmac.key`) | `spotpass-letter/` | Free plays | Dump the game's code with GodMode9 (title `0004000000153500` → *NCCH image options* → *Extract .code*), put `0004000000153500.dec.code` in `spotpass-letter/`, run `python find_sign_key.py 0004000000153500.dec.code`, and save the key it prints (32 hex digits) as `badge_arcade_hmac.key`. |
 | Your console's NEX password (`nex-keys.txt`) | `server/` | Usually nothing | Only if the server's log says *No NEX password known*: see [server/README.md](server/README.md#the-consoles-nex-password). |
 
@@ -108,14 +108,44 @@ current date as days pass.
 
 | Tab | What it does |
 |---|---|
-| **Setup** | The checklist of what's installed and provided, and connecting the 3DS (hotspot or proxy). |
+| **Setup** | The checklist of what's installed and provided, connecting the 3DS (hotspot or proxy), and updates. |
 | **Server** | Start and stop the server and proxy, set the game date, see what the 3DS gets next, and watch logins, SpotPass downloads and saves as they happen. |
 | **Machines** | Every archived Nintendo week and your custom weeks; pick one and press *Serve*. |
 | **Build a week** | Pick machine setups from every archived week (by series or one by one, with their badges listed) and build your own week. |
 | **Free plays** | Give free plays for the game date, and see which daily campaigns your save has collected. |
+| **Letters** | Write letters for the 3DS's Notifications applet, with a picture, and send them through SpotPass (experimental: see [spotpass-letter/README.md](spotpass-letter/README.md)). |
 | **Saves** | List, back up and reset saves. |
 
 After serving a week or giving free plays, fully close and reopen Badge Arcade.
+
+## Updating
+
+The installed version is in the `VERSION` file and the manager's title bar.
+The manager checks for a new version once a day and shows **Update now** on
+the Setup tab when there is one. Tick *Install updates automatically* to have
+it install updates as it opens.
+
+Updates come from this project's [GitHub releases](https://github.com/AntiFreeze-1/badge-arcade-server-full/releases).
+They replace the project's own files and never touch yours: `server/config.json`,
+saves, SpotPass files, keys and dumps, and the manager's settings are kept. The
+files an update replaces are zipped into `backups/` first. If the folder is a
+git checkout, it is updated with `git pull` instead.
+
+From the command line, or for updating on a schedule:
+
+```sh
+python update.py --check        # exit code 0: up to date, 10: update available, 1: couldn't check
+python update.py --apply --yes  # install the newest release without asking
+```
+
+Stop the server and proxy first: `update.py` refuses to update while they're
+running. To update unattended, schedule `python update.py --apply --yes` in the
+project folder for a time the server isn't running (Windows Task Scheduler, or
+cron on Linux/macOS: `0 4 * * * cd /path/to/badge-arcade-server-full && python3 update.py --apply --yes`).
+
+To publish a new version: bump `VERSION`, commit, and push a matching tag
+(`git tag v1.1.0 && git push origin v1.1.0`). The Release workflow runs the
+tests and publishes the release that installs pick up.
 
 ## What's here
 
@@ -123,8 +153,9 @@ After serving a week or giving free plays, fully close and reopen Badge Arcade.
 |---|---|
 | `Setup.bat`, `install.py` | One-time setup, and the checklist the manager shows. |
 | `Badge Arcade Manager.bat`, `manager.py` | The manager window. |
+| `update.py`, `VERSION` | Checks for and installs new versions. |
 | [`server/`](server/README.md) | The server: NEX authentication and secure servers, save storage, SpotPass file hosting, and the proxy and hotspot (`server/mitm/`). |
-| [`spotpass-letter/`](spotpass-letter/README.md) | SpotPass tools used by the manager: switch weeks (`serve.py`), build custom weeks (`custom_week.py`), free plays (`free_plays.py`), find the game's signing key (`find_sign_key.py`), and an experimental SpotPass letter builder. |
+| [`spotpass-letter/`](spotpass-letter/README.md) | SpotPass tools used by the manager: switch weeks (`serve.py`), build custom weeks (`custom_week.py`), free plays (`free_plays.py`), letters (`letters.py`, `make_letter.py`, experimental), and find the game's signing key (`find_sign_key.py`). |
 
 ## Troubleshooting
 

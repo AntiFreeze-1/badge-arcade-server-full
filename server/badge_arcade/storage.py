@@ -327,6 +327,22 @@ class Storage:
 				old.unlink(missing_ok=True)
 		return True
 
+	def prune_uploads(self, max_age: float = 86400) -> int:
+		"""Forgets uploads that were prepared but never completed (the game
+		disconnected mid-save), with any data they received. Returns how many."""
+		cutoff = int(time.time() - max_age)
+		with self._lock:
+			rows = self._db.execute(
+				"SELECT u.key, u.data_id, u.version, o.version AS current FROM uploads u "
+				"LEFT JOIN objects o ON o.data_id = u.data_id WHERE u.created < ?", (cutoff,)
+			).fetchall()
+			self._db.executemany("DELETE FROM uploads WHERE key=?", [(row["key"],) for row in rows])
+			self._db.commit()
+		for row in rows:
+			if row["version"] != row["current"]:
+				self.object_file(row["data_id"], row["version"]).unlink(missing_ok=True)
+		return len(rows)
+
 	# ----- Save management (used by the admin tool) -----
 
 	def list_objects(self) -> list[dict]:
