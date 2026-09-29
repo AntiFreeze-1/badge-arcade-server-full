@@ -136,6 +136,17 @@ Then fully close and reopen Badge Arcade. What makes this work:
   Nintendo signature; `playinfo` must carry a valid HMAC from the game's key
   (`badge_arcade_hmac.key`, found in its code with `find_sign_key.py`).
 
+### How many machines a week can have
+
+The schedule numbers each machine on the floor through the week
+(`DefaultStageName000` to `999`), and Badge Arcade crashes when a week goes past
+999: for example 147 machines with *Every machine, every day* (147 × 7 = 1,029).
+The builder therefore puts at most as many machines on the floor each day as
+Nintendo ever did (read from the archived weeks in `other/`), and never more than
+fits the numbering. When you choose more, each day shows a different part of them,
+so every machine still gets its turn during the week. `serve.py` refuses weeks
+built before this limit; build them again.
+
 ## Getting the key from your own console
 You need Luma3DS/boot9strap custom firmware with GodMode9. This is the same step the
 Azahar/Citra emulators ask for.

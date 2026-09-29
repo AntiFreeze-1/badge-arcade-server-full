@@ -894,11 +894,15 @@ class Manager(tk.Tk):
 		if not setups:
 			messagebox.showinfo("Badge Arcade Manager", "Add some machines first.")
 			return
-		lineup = daily_lineup(setups, 7, self.chosen_per_series())
+		lineup = self.builder.lineup(setups, self.chosen_per_series())
 		# Served weeks start the day before the game date, so the game date is day 2
 		shown = lineup[1]
+		wanted = len(daily_lineup(setups, 1, self.chosen_per_series())[0])
+		capped = "" if wanted <= self.builder.max_per_day else (
+			f"\n\nThat's {wanted} machines a day, but the game handles at most {self.builder.max_per_day} (the most "
+			"Nintendo put on the floor in one day), so each day shows a different part of them.")
 		self.set_text(self.badge_view, f"On {serve.current_game_date()} the floor has {len(shown)} "
-			f"machines (bonus machine: {shown[0]}):\n\n" + "\n".join(f"{series_name(series_of(s))}: {s}" for s in shown))
+			f"machines (bonus machine: {shown[0]}):{capped}\n\n" + "\n".join(f"{series_name(series_of(s))}: {s}" for s in shown))
 
 	def build_week(self, serve_after: bool = False) -> None:
 		setups = self.chosen_setups()
@@ -912,6 +916,10 @@ class Manager(tk.Tk):
 			content = self.builder.build(setups, per_series)
 			path = serve.save_custom_week(name, setups, per_series, content)
 			message = f"Built \"{name}\": {len(setups)} machines, {len(content) / 1e6:.1f} MB."
+			per_day = len(daily_lineup(setups, 1, per_series)[0])
+			if per_day > self.builder.max_per_day:
+				message += (f" The game handles at most {self.builder.max_per_day} machines a day, so each day "
+					"shows a different part of them.")
 			if serve_after:
 				week = next(w for w in serve.list_weeks(self.key) if w.path == path)
 				message += "\n" + serve.serve_week(week, self.key) + "\n\nNow fully close and reopen Badge Arcade."

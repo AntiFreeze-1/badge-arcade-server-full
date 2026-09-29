@@ -37,7 +37,7 @@ from free_plays import daily_campaigns, pack, set_free_plays, unpack
 import letters
 from make_letter import BOSS_HEADER_SIZE, CONTENT_HEADER_SIZE, build_letter_container, key_from_boot9
 from repack import repack
-from custom_week import build_container, open_container, sarc_read, sarc_write
+from custom_week import build_container, open_container, sarc_read, sarc_write, schedule_problem
 
 HERE = Path(__file__).resolve().parent
 OTHER = HERE.parent / "other"
@@ -231,6 +231,10 @@ def serve_week(week: Week, key: bytes, date: datetime.date | None = None) -> str
 	it starts the day before (the archived weeks are all from 2022-2023)."""
 	target = date or current_game_date()
 	data = week.path.read_bytes()
+	schedule = sarc_read(open_container(data, key)[1]).get("Schedule.xml", b"").decode("utf-8", "replace")
+	problem = schedule_problem(schedule)
+	if problem:
+		raise ValueError(f"{week.label} can't be served: {problem}.")
 	state = load_state()
 	new_id = next_ns_data_id(state)
 	message = f"Now serving {week.label} ({week.machines} machines) as SpotPass ID {new_id:#x}."

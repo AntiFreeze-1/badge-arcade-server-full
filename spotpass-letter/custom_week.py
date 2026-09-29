@@ -202,9 +202,34 @@ def schedule_days(xml: str) -> list[datetime.date]:
 	return [start + datetime.timedelta(days=i) for i in range((end - start).days)]
 
 
-def daily_lineup(setups: list[str], days: int, per_series: int) -> list[list[str]]:
+# The schedule names each day's machines DefaultStageName000, 001, ... through the week
+# (KeyVariable DefaultStageName$(Slot3): three digits). A week with more than 1000 of
+# them makes Badge Arcade crash while it sets up the floor.
+SLOT_LIMIT = 1000
+SLOT_KEY = re.compile(r"<Key>DefaultStageName(\d+)</Key>")
+
+
+def floor_sizes(schedule: str) -> list[int]:
+	"""How many machines each day of a week's Schedule.xml puts on the floor."""
+	days = Counter(re.findall(r"<DateStartText>(\d{8})</DateStartText>(?:(?!</FileItem>).)*"
+		r"<RegexSetName>DefaultStage</RegexSetName>", schedule, re.S))
+	return list(days.values())
+
+
+def schedule_problem(schedule: str) -> str | None:
+	"""Why Badge Arcade can't use this schedule (None if it can)."""
+	slots = [int(n) for n in SLOT_KEY.findall(schedule)]
+	if slots and max(slots) >= SLOT_LIMIT:
+		return (f"it puts {len(slots)} machines on the floor over the week, and the game crashes past {SLOT_LIMIT}. "
+			"Build it again: the builder now spreads the machines over the week")
+	return None
+
+
+def daily_lineup(setups: list[str], days: int, per_series: int, max_per_day: int | None = None) -> list[list[str]]:
 	"""Up to per_series setups of every series each day, rotating through each series.
-	per_series 0 puts every setup on the floor every day."""
+	per_series 0 puts every setup on the floor every day. With max_per_day, a day with
+	more than that shows a different part of its line-up each day, so over the week
+	every setup still gets its turn when there's room for all of them."""
 	by_series = defaultdict(list)
 	for setup in setups:
 		by_series[series(setup)].append(setup)
@@ -214,6 +239,9 @@ def daily_lineup(setups: list[str], days: int, per_series: int) -> list[list[str
 		for members in by_series.values():
 			count = len(members) if per_series <= 0 else min(per_series, len(members))
 			today += [members[(day * count + i) % len(members)] for i in range(count)]
+		if max_per_day and len(today) > max_per_day:
+			start = day * max_per_day % len(today)
+			today = [today[(start + i) % len(today)] for i in range(max_per_day)]
 		lineup.append(today)
 	return lineup
 
@@ -222,6 +250,8 @@ def write_schedule(xml: str, week: str, lineup: list[list[str]], days: list[date
 	"""Replaces the daily machine line-up (DefaultStage) and bonus machine (BonusStage)."""
 	items = re.findall(r"[ \t]*<FileItem>.*?</FileItem>\r?\n", xml, re.S)
 	kept = [item for item in items if not re.search(r"<RegexSetName>(DefaultStage|BonusStage)</RegexSetName>", item)]
+	if sum(len(today) for today in lineup) > SLOT_LIMIT:
+		raise ValueError(f"a week can put at most {SLOT_LIMIT} machines on the floor in total (the game crashes past that)")
 	new = []
 	slot = 0
 	for today, day in zip(lineup, days):
@@ -244,6 +274,7 @@ class Pool:
 	def __init__(self):
 		self.resources: dict[str, bytes] = {}  # pc/rt/... -> file
 		self.setups: dict[str, bytes] = {}     # setup name -> .cib.szs
+		self.floor_sizes: list[int] = []       # machines per day in Nintendo's weeks
 		self.by_stem: dict[str, str] = {}
 
 	@classmethod
@@ -251,6 +282,8 @@ class Pool:
 		pool = cls()
 		for path in SOURCES + (SOURCES_2016 if include_2016 else []):
 			top = sarc_read(open_container(path.read_bytes(), key)[1])
+			if "Schedule.xml" in top:
+				pool.floor_sizes += floor_sizes(top["Schedule.xml"].decode("utf-8", "replace"))
 			weeks = [name for name in top if name.startswith("sharc/")]
 			pool.add(sarc_read(top[weeks[0]]) if weeks else top)
 		return pool
@@ -299,6 +332,15 @@ class Builder:
 		known = registry(self.xml)
 		self.pool = Pool.from_sources(key, include_2016)
 		self.buildable = sorted(s for s in self.pool.setups if self.pool.buildable(s, known))
+		# At most as many machines a day as Nintendo ever put on the floor, and never so
+		# many that the week runs out of slot numbers
+		self.days = len(schedule_days(self.top["Schedule.xml"].decode("utf-8")))
+		nintendo_max = max(self.pool.floor_sizes + floor_sizes(self.top["Schedule.xml"].decode("utf-8")), default=0)
+		self.max_per_day = min(nintendo_max or SLOT_LIMIT, SLOT_LIMIT // self.days)
+
+	def lineup(self, setups: list[str], per_series: int) -> list[list[str]]:
+		"""Which setups are on the floor each day of the week."""
+		return daily_lineup(setups, self.days, per_series, self.max_per_day)
 
 	def badges(self, setup: str) -> list[str]:
 		return sorted(part for part in self.pool.parts(setup) if part.startswith("Pr_"))
@@ -334,7 +376,7 @@ class Builder:
 		top = dict(self.top)
 		schedule = top["Schedule.xml"].decode("utf-8")
 		days = schedule_days(schedule)
-		lineup = daily_lineup(setups, len(days), per_series)
+		lineup = daily_lineup(setups, len(days), per_series, self.max_per_day)
 		top["Schedule.xml"] = write_schedule(schedule, stem(self.week_name), lineup, days).encode("utf-8")
 
 		top[self.week_name] = sarc_write(files, 0x80)
