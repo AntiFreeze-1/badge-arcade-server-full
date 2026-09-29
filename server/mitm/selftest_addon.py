@@ -116,8 +116,9 @@ def main() -> None:
 		addon.request(flow)
 		assert flow.response is not None and flow.response.status_code == 200
 		text = flow.response.get_text()
-		assert "<DefaultStop>false</DefaultStop>" in text and "<ListId>1932</ListId>" in text
+		assert "<DefaultStop>false</DefaultStop>" in text and "<ListId>1933</ListId>" in text
 		assert "<TitleId>0004000000153500</TitleId><TaskId>FGONLYT</TaskId><Level>HIGH</Level>" in text
+		assert "<TitleId>0004000000153500</TitleId><TaskId>news</TaskId><Level>EXPEDITE</Level>" in text
 
 		# Unrelated hosts are never touched
 		flow = get_flow("http://conntest.nintendowifi.net/")
