@@ -122,3 +122,68 @@ def test_fast_and_pure_aes_agree():
 	# The counter carries across all 16 bytes (not only the low 32 bits)
 	iv = b"\x00" * 11 + b"\xff" * 5
 	assert make_letter.aes128_ctr(KEY, iv, data) == make_letter.aes128_ctr_pure(KEY, iv, data)
+
+
+GAME = 0x0004000000153500
+
+
+def playinfo_file(tmp_path: Path, monkeypatch, content: bytes = b"playinfo payload") -> Path:
+	path = tmp_path / "other" / "playinfo_v131.dat.boss"
+	plain = make_letter.build_container_plain(content, GAME, 0x10001, 0x100, 1, mark_arrived_always=True)
+	path.write_bytes(make_letter.encrypt_container(KEY, plain, 1))
+	monkeypatch.setattr(serve, "LIVE_PLAYINFO", path)
+	return path
+
+
+def test_letter_goes_out_inside_playinfo(tmp_path: Path, monkeypatch):
+	path = playinfo_file(tmp_path, monkeypatch)
+	saved = letters.SavedLetter("", "Through playinfo", "Opens with the game")
+	assert "Open Badge Arcade" in serve.serve_letter(saved, KEY)
+
+	info, payloads = make_letter.parse_container(path.read_bytes(), KEY)
+	assert [p.program_id for p in payloads] == [GAME, make_letter.NEWS_PROGRAM_ID]
+	game, news = payloads
+	assert game.content == b"playinfo payload" and game.datatype == 0x10001 and game.ns_data_id != 0x100  # a new ID
+	assert info["flags0"] == 0x80  # playinfo keeps its own content flags
+	assert news.ns_data_id == saved.ns_data_id and "'Through playinfo'" in make_letter.describe_news_payload(news.content)
+	assert serve.letter_in_playinfo()
+
+	# Taking it down puts back the game's payload alone, under yet another new ID
+	serve.remove_letter(KEY)
+	_, payloads = make_letter.parse_container(path.read_bytes(), KEY)
+	assert [p.content for p in payloads] == [b"playinfo payload"] and payloads[0].ns_data_id > game.ns_data_id
+	assert not serve.letter_in_playinfo()
+
+
+def test_letter_without_playinfo_uses_the_news_task(tmp_path: Path, monkeypatch):
+	monkeypatch.setattr(serve, "LIVE_PLAYINFO", tmp_path / "other" / "playinfo_v131.dat.boss")
+	message = serve.serve_letter(letters.SavedLetter("", "News only", "Text"), KEY)
+	assert "Give free plays once" in message and not serve.letter_in_playinfo()
+	assert serve.news_files()[0].exists()
+
+
+def test_free_plays_keep_an_undelivered_letter(tmp_path: Path, monkeypatch):
+	import datetime
+	import hmac
+	import struct
+	import free_plays
+	hmac_key = bytes(range(32, 48))
+	(tmp_path / "badge_arcade_hmac.key").write_text(hmac_key.hex())
+	monkeypatch.setattr(serve, "HERE", tmp_path)
+	monkeypatch.setattr(serve, "game_date", lambda: None)
+	body = bytearray(free_plays.DAILY_COUNT_OFFSET) + struct.pack("<I", 1) + free_plays.DAILY_ENTRY.pack(1, 1, 0, 0, 1)
+	base = playinfo_file(tmp_path, monkeypatch, bytes(body) + hmac.digest(hmac_key, bytes(body), "sha256"))
+	monkeypatch.setattr(serve, "PLAYINFO_BASE", base.with_name("playinfo_base.enc"))
+	serve.PLAYINFO_BASE.write_bytes(base.read_bytes())
+
+	serve.serve_letter(letters.SavedLetter("", "Still coming", "Text"), KEY)
+	serve.give_free_plays(5, KEY, datetime.date(2026, 9, 29))
+	_, payloads = make_letter.parse_container(base.read_bytes(), KEY)
+	assert [p.program_id for p in payloads] == [GAME, make_letter.NEWS_PROGRAM_ID]
+	assert free_plays.daily_campaigns(payloads[0].content)[0][4] == 5
+
+	# Once the 3DS has it, new free plays go out without it
+	serve.mark_letter_downloaded()
+	serve.give_free_plays(3, KEY, datetime.date(2026, 9, 29))
+	_, payloads = make_letter.parse_container(base.read_bytes(), KEY)
+	assert [p.program_id for p in payloads] == [GAME] and not serve.letter_in_playinfo()

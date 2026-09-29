@@ -35,7 +35,8 @@ from Crypto.Cipher import AES
 
 from free_plays import daily_campaigns, pack, set_free_plays, unpack
 import letters
-from make_letter import BOSS_HEADER_SIZE, CONTENT_HEADER_SIZE, build_letter_container, key_from_boot9
+from make_letter import (BOSS_HEADER_SIZE, CONTENT_HEADER_SIZE, NEWS_PROGRAM_ID, build_container_plain_multi,
+                         build_letter_container, build_news_payload, encrypt_container, key_from_boot9, parse_container)
 from repack import repack
 from custom_week import build_container, open_container, sarc_read, sarc_write, schedule_problem
 
@@ -289,7 +290,14 @@ def give_free_plays(plays: int, key: bytes, date: datetime.date | None = None) -
 	body, payload = unpack(data, key)
 	new_payload = set_free_plays(payload, hmac_key, plays, start, state["free_play_round"])
 	new_id = next_ns_data_id(state)
-	put_live(pack(data, key, body, new_payload, new_id, int(time.time())), LIVE_PLAYINFO)
+	serial = int(time.time())
+	out = pack(data, key, body, new_payload, new_id, serial)
+	waiting = live_letter() if state.get("letter_in_playinfo") else None
+	if waiting and not waiting.downloaded:
+		out = playinfo_with_letter(out, key, waiting, new_id, serial)  # still on its way to the 3DS
+	else:
+		state.pop("letter_in_playinfo", None)
+	put_live(out, LIVE_PLAYINFO)
 	save_state(state)
 	message = f"{plays} free plays are ready for {today} (round {state['free_play_round']}, SpotPass ID {new_id:#x})."
 	if game_date() and today != game_date():
@@ -300,10 +308,27 @@ def give_free_plays(plays: int, key: bytes, date: datetime.date | None = None) -
 
 # ----- letters (experimental) -----
 
+def playinfo_with_letter(playinfo: bytes, key: bytes, letter: letters.SavedLetter | None, ns_data_id: int,
+		serial: int) -> bytes:
+	"""The playinfo container with its game payload unchanged (under ns_data_id) and, with a
+	letter, the letter as a second payload for the news module, the way Nintendo packed its
+	own letters. The 3DS downloads playinfo every time Badge Arcade opens, and SpotPass hands
+	each payload to the program it names, so the letter reaches the Notifications applet
+	without waiting for the news task."""
+	info, payloads = parse_container(playinfo, key)
+	game = next(p for p in payloads if p.program_id != NEWS_PROGRAM_ID)
+	entries = [(game.content, game.program_id, game.datatype, ns_data_id, game.version)]
+	if letter is not None:
+		news = build_news_payload(letter.to_letter(ns_data_id=letter.ns_data_id))
+		entries.append((news, NEWS_PROGRAM_ID, 0x20001, letter.ns_data_id, 1))
+	plain = build_container_plain_multi(entries, mark_arrived_always=bool(info["flags0"] & 0x80))
+	return encrypt_container(key, plain, serial, iv12=playinfo[0x1C:0x28])
+
+
 def serve_letter(letter: letters.SavedLetter, key: bytes) -> str:
-	"""Saves the letter to the history and puts it live as the news file. It gets a new
-	SpotPass ID and serial each time (the current time), so the console treats every
-	send as a new letter."""
+	"""Saves the letter to the history and puts it live: as the news task's file, and inside
+	playinfo, which the 3DS downloads whenever Badge Arcade opens. It gets a new SpotPass ID
+	and serial each time (the current time), so the console treats every send as new."""
 	now = int(time.time())
 	container = build_letter_container(letter.to_letter(ns_data_id=now & 0xFFFFFFFF), key, serial=now)
 	letter.sent = datetime.datetime.fromtimestamp(now).isoformat(timespec="seconds")
@@ -314,19 +339,37 @@ def serve_letter(letter: letters.SavedLetter, key: bytes) -> str:
 		put_live(container, path)
 	state = load_state()
 	state["live_letter"] = letter.id
+	if LIVE_PLAYINFO.exists():
+		put_live(playinfo_with_letter(LIVE_PLAYINFO.read_bytes(), key, letter, next_ns_data_id(state), now), LIVE_PLAYINFO)
+		state["letter_in_playinfo"] = True
+		how = "Open Badge Arcade on the 3DS: the letter comes with the game's download, then it's in the Notifications applet."
+	else:
+		state.pop("letter_in_playinfo", None)
+		how = ("The 3DS downloads it in the background (often while in sleep mode with Wi-Fi on); it then appears in "
+			"the Notifications applet. (Give free plays once so it can also come with Badge Arcade's own download.)")
 	save_state(state)
-	return (f"\"{letter.title}\" is live as SpotPass ID {letter.ns_data_id:#x}. The 3DS downloads it in the "
-		"background (often while in sleep mode with Wi-Fi on); it then appears in the Notifications applet.")
+	return f"\"{letter.title}\" is live as SpotPass ID {letter.ns_data_id:#x}. {how}"
 
 
-def remove_letter() -> str:
+def remove_letter(key: bytes | None = None) -> str:
+	"""Takes the live letter down. With the key, playinfo is rebuilt without it (with a new
+	SpotPass ID, so a console that hasn't got it yet takes the plain one)."""
 	state = load_state()
 	was_live = any(path.exists() for path in news_files())
 	for path in news_files():
 		path.unlink(missing_ok=True)
 	state.pop("live_letter", None)
+	if key is not None and state.get("letter_in_playinfo") and LIVE_PLAYINFO.exists():
+		put_live(playinfo_with_letter(LIVE_PLAYINFO.read_bytes(), key, None, next_ns_data_id(state), int(time.time())),
+			LIVE_PLAYINFO)
+		state.pop("letter_in_playinfo")
 	save_state(state)
 	return "The letter was taken down." if was_live else "No letter was live."
+
+
+def letter_in_playinfo() -> bool:
+	"""Whether the live letter also goes out inside playinfo."""
+	return bool(load_state().get("letter_in_playinfo")) and live_letter() is not None
 
 
 def live_letter() -> letters.SavedLetter | None:
@@ -405,10 +448,10 @@ def main() -> int:
 	letter.add_argument("--remove", action="store_true", help="take the live letter down instead")
 	sub.add_parser("status", help="show what's live")
 	args = parser.parse_args()
-	if args.command == "letter" and args.remove:
-		print(remove_letter())
-		return 0
 	key = boss_key()
+	if args.command == "letter" and args.remove:
+		print(remove_letter(key))
+		return 0
 
 	if args.command == "weeks":
 		for w in list_weeks(key):

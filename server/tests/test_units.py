@@ -82,3 +82,14 @@ def test_http_body_limits(http_port: int):
 	assert post(http_port, "not-a-number") == 400
 	assert post(http_port, "-5") == 400
 	assert post(http_port, "14", b"action=TE9HSU4") == 200  # still answers normal requests
+
+
+def test_address_in_use_message():
+	import errno
+	from badge_arcade.__main__ import address_in_use
+	in_use = OSError(errno.EADDRINUSE, "Address already in use")
+	assert address_in_use(in_use)
+	# The NEX servers raise it wrapped in (nested) exception groups, like in a real server.log
+	assert address_in_use(BaseExceptionGroup("x", [ExceptionGroup("y", [in_use])]))
+	assert not address_in_use(OSError(errno.EACCES, "Permission denied"))
+	assert not address_in_use(ExceptionGroup("x", [ValueError("no")]))

@@ -992,10 +992,12 @@ class Manager(tk.Tk):
 
 	def build_letters_tab(self, tab: ttk.Frame) -> None:
 		ttk.Label(tab, text="Send a letter to the 3DS's Notifications applet, like the ones Nintendo sent from Badge "
-			"Arcade. The 3DS fetches it in the background with SpotPass, which can take hours: leave it in sleep mode "
-			"with Wi-Fi on and the server and proxy running.", style="Hint.TLabel", wraplength=940, justify="left").pack(anchor="w")
-		ttk.Label(tab, text="Experimental: this hasn't been confirmed on a console yet. Back up the 3DS's news save "
-			"first (spotpass-letter/README.md, \"Delivering it\").", foreground="#b35c00", wraplength=940,
+			"Arcade. It comes with the data Badge Arcade downloads when it opens: send it, then open Badge Arcade on the "
+			"3DS (with the server and proxy running) and check Notifications afterwards.",
+			style="Hint.TLabel", wraplength=940, justify="left").pack(anchor="w")
+		ttk.Label(tab, text="Experimental. If Badge Arcade can't download its data after you send a letter, press "
+			"\"Take letter down\". Back up the 3DS's news save first (spotpass-letter/README.md, \"Delivering it\").",
+			foreground="#b35c00", wraplength=940,
 			justify="left").pack(anchor="w", pady=(2, 0))
 
 		body = ttk.Frame(tab)
@@ -1191,7 +1193,7 @@ class Manager(tk.Tk):
 
 		def work():
 			if is_live:
-				serve.remove_letter()
+				serve.remove_letter(self.key)
 			letters.delete_letter(letter.id)
 
 		def done(_):
@@ -1250,11 +1252,12 @@ class Manager(tk.Tk):
 			self.refresh_letters()
 			self.refresh_status()
 
-		self.background("Taking the letter down...", serve.remove_letter, done)
+		self.background("Taking the letter down...", lambda: serve.remove_letter(self.key), done)
 
 	def check_letter_downloaded(self, line: str) -> None:
 		"""Called with each new server log line: marks the live letter as downloaded."""
-		if re.search(r"Sent SpotPass file news(_v131)?\.dat", line) and serve.mark_letter_downloaded():
+		sent = re.search(r"Sent SpotPass file (news(_v131)?|playinfo_v131)\.dat", line)
+		if sent and (sent.group(1) != "playinfo_v131" or serve.letter_in_playinfo()) and serve.mark_letter_downloaded():
 			self.status.set("The 3DS downloaded the letter. It should now be in the Notifications applet.")
 			self.refresh_letters()
 
