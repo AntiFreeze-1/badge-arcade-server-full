@@ -1254,7 +1254,7 @@ class Manager(tk.Tk):
 
 	def check_letter_downloaded(self, line: str) -> None:
 		"""Called with each new server log line: marks the live letter as downloaded."""
-		if "Sent SpotPass file news_v131" in line and serve.mark_letter_downloaded():
+		if re.search(r"Sent SpotPass file news(_v131)?\.dat", line) and serve.mark_letter_downloaded():
 			self.status.set("The 3DS downloaded the letter. It should now be in the Notifications applet.")
 			self.refresh_letters()
 

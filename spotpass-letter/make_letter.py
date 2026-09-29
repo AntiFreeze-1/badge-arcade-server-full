@@ -30,7 +30,7 @@ Formats (big-endian unless noted); see README.md for sources:
 
   News payload (little-endian, layout from Citra's BOSS work plus the
   news:s AddNotification header; see README "verified vs. unverified"):
-    0x00 u8 valid=1, u8 unread=1, u8 is_jpeg, u8 spotpass=1,
+    0x00 u8 valid=1, u8 unread=1, u8 has_image, u8 spotpass=1,
          u8 opted_out=0, u8 has_url, u8 unknown(=1), u8 pad
     0x08 u64 source program ID (Badge Arcade title ID)
     0x10 u32 nsDataId, 0x14 u32 version
@@ -367,15 +367,15 @@ def build_news_payload(letter: Letter) -> bytes:
 	message_bytes = normalized_message(letter).encode("utf-16-le") + b"\x00\x00"
 	if letter.url:
 		message_bytes += letter.url.encode("utf-8") + b"\x00"
-	is_jpeg = 0
-	if letter.image:
-		is_jpeg = 0 if jpeg_info(letter.image)[2] else 1  # MPO (3D) pictures aren't flagged as JPEG
+	# 3dbrew calls this "image is JPEG", but all of the 155 real letters with a picture
+	# have it set, 3D (MPO) ones included, and none without a picture do
+	has_image = 1 if letter.image else 0
 
 	jump = letter.source_program_id if letter.jump_param is None else letter.jump_param
 	flags = bytes([
 		1,                      # 0x0 valid
 		1,                      # 0x1 unread
-		is_jpeg,                # 0x2 image is JPEG
+		has_image,              # 0x2 has a picture (JPEG or MPO)
 		1,                      # 0x3 SpotPass notification
 		0,                      # 0x4 opted out
 		1 if letter.url else 0,  # 0x5 has URL
@@ -406,7 +406,7 @@ def describe_news_payload(payload: bytes) -> str:
 		url = msg_raw[end + 2:].split(b"\x00")[0].decode("utf-8", "replace")
 	image = payload[NEWS_BODY_SIZE:]
 	lines = [
-		f"  flags        {f.hex(' ')}  (valid, unread, jpeg, spotpass, optout, url, unk, pad)",
+		f"  flags        {f.hex(' ')}  (valid, unread, image, spotpass, optout, url, unk, pad)",
 		f"  source title {pid:016X}",
 		f"  nsDataId     {ns:#x}   version {ver}",
 		f"  jump param   {jump:016X}",
@@ -667,6 +667,88 @@ def cmd_key(args) -> int:
 	return 0
 
 
+# A real letter Nintendo sent through Badge Arcade's "news" task, as the SpotPass
+# Archive saved it in April 2024 (archive.org item 3ds-boss-data-3). Only downloaded
+# when you run "compare --reference"; it isn't part of this project.
+REFERENCE_URL = ("https://archive.org/download/3ds-boss-data-3/j0ITmVqVgfUxe0O9.zip/"
+	"AD%2Fde%2Fnews%2Fnews.dat.boss")
+
+
+def first_difference(a: bytes, b: bytes) -> str:
+	at = next((i for i, (x, y) in enumerate(zip(a, b)) if x != y), None if len(a) == len(b) else min(len(a), len(b)))
+	return "same bytes" if at is None else f"differ from byte {at:#x}"
+
+
+def comparison(real: bytes, key: bytes) -> list[tuple[str, str, str]]:
+	"""(field, Nintendo's value, ours) for a real letter container and one this script
+	builds with the same title, text and picture."""
+	info, payloads = parse_container(real, key)
+	if len(payloads) != 1 or payloads[0].program_id != NEWS_PROGRAM_ID:
+		kinds = ", ".join(f"{p.program_id:016X}" for p in payloads)
+		raise ValueError(f"not a single letter for the news module (payloads: {kinds})")
+	real_payload = payloads[0]
+	news = real_payload.content
+	if len(news) < NEWS_BODY_SIZE:
+		raise ValueError(f"the letter is {len(news)} bytes, shorter than the {NEWS_BODY_SIZE:#x}-byte layout we use")
+
+	# Rebuild it with our code from its own text
+	title = news[NEWS_TITLE_OFFSET:NEWS_HEADER_SIZE].decode("utf-16-le", "replace").split("\x00")[0]
+	raw = news[NEWS_HEADER_SIZE:NEWS_BODY_SIZE]
+	end = next((i for i in range(0, len(raw) - 1, 2) if raw[i:i + 2] == b"\x00\x00"), len(raw))
+	message = raw[:end].decode("utf-16-le", "replace")
+	url = raw[end + 2:].split(b"\x00")[0].decode("utf-8", "replace") if news[5] else None
+	source, ns, version, jump = struct.unpack_from("<QIIQ", news, 8)
+	letter = Letter(title, message, url, news[NEWS_BODY_SIZE:] or None, source, ns, version,
+		None if jump == source else jump, news[6])
+	ours_news = build_news_payload(letter)
+	ours_plain = build_container_plain(ours_news, NEWS_PROGRAM_ID, 0x20001, ns, version)
+	ours_info, ours_payloads = parse_container(encrypt_container(key, ours_plain, info["serial"]), key)
+	ours = ours_payloads[0]
+
+	rows = [
+		("container: content flags", f"{info['flags0']:#04x}", f"{ours_info['flags0']:#04x}"),
+		("container: payloads", str(info["payload_count"]), str(ours_info["payload_count"])),
+		("container: hash / RSA type", f"{info['hash_type']} / {info['rsa_type']}", f"{ours_info['hash_type']} / {ours_info['rsa_type']}"),
+		("payload: program ID", f"{real_payload.program_id:016X}", f"{ours.program_id:016X}"),
+		("payload: datatype", f"{real_payload.datatype:#x}", f"{ours.datatype:#x}"),
+		("payload: version", str(real_payload.version), str(ours.version)),
+		("payload: size", str(len(news)), str(len(ours.content))),
+		("letter: flags", news[:8].hex(" "), ours_news[:8].hex(" ")),
+		("letter: source title / jump", f"{source:016X} / {jump:016X}",
+			" / ".join(f"{v:016X}" for v in struct.unpack_from("<QIIQ", ours_news, 8)[::3])),
+		("letter: header, title, message", first_difference(news[:NEWS_BODY_SIZE], ours_news[:NEWS_BODY_SIZE]), ""),
+		("letter: picture", f"{len(news) - NEWS_BODY_SIZE} bytes", f"{len(ours_news) - NEWS_BODY_SIZE} bytes"),
+	]
+	return rows
+
+
+def cmd_compare(args) -> int:
+	key = load_key(args)
+	if key is None:
+		raise SystemExit("compare needs --key-file or --boot9 (the real letter is encrypted)")
+	if args.reference:
+		import urllib.request
+		dest = DEFAULT_OUT_DIR / "reference" / "badge_arcade_news.dat.boss"
+		if not dest.exists():
+			print(f"Downloading a real Badge Arcade letter from the SpotPass Archive:\n  {REFERENCE_URL}")
+			dest.parent.mkdir(parents=True, exist_ok=True)
+			with urllib.request.urlopen(REFERENCE_URL, timeout=120) as response:
+				dest.write_bytes(response.read())
+		files = [dest]
+	else:
+		files = [Path(f) for f in args.files]
+	if not files:
+		raise SystemExit("give container files to compare, or --reference")
+	for path in files:
+		rows = comparison(path.read_bytes(), key)
+		print(f"\n{path.name}: Nintendo's letter next to the same letter built by this script")
+		width = max(len(r[0]) for r in rows)
+		for name, real, ours in rows:
+			mark = "" if not ours or real == ours else "   <-- DIFFERENT"
+			print(f"  {name:{width}}  {real:24} {ours}{mark}")
+	return 0
+
+
 URL_RE = re.compile(rb"https?://[\x21-\x7e]{6,300}")
 
 
@@ -735,6 +817,12 @@ def main(argv=None) -> int:
 	k.add_argument("--save", help="write the key as hex to this file")
 	add_key_args(k)
 	k.set_defaults(func=cmd_key)
+
+	c = sub.add_parser("compare", help="compare real Nintendo letter containers with what this script builds")
+	c.add_argument("files", nargs="*", help="real news containers (e.g. from the SpotPass Archive)")
+	c.add_argument("--reference", action="store_true", help="download a real Badge Arcade letter from the SpotPass Archive and compare it")
+	add_key_args(c)
+	c.set_defaults(func=cmd_compare)
 
 	f = sub.add_parser("find-urls", help="list SpotPass URLs found in a file (e.g. BOSS system save)")
 	f.add_argument("file")
