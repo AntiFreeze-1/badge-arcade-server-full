@@ -270,10 +270,14 @@ Badge Arcade's Japanese one. They show the letter as Nintendo sent it:
   a new one.
 - **Size:** the letters are 54–58 KB, which is the 0x60 header, 0x1780 bytes of text and
   a picture of about 50 KB after the container and payload headers.
-- **Still to check (encrypted):** the payload header needs the console's key. Run
-  `python make_letter.py compare --reference --boot9 boot9.bin` once. It shows the real
-  datatype (we use the guess 0x20001), the content flags and the payload's program ID
-  next to ours.
+- **Two payloads:** decrypted with a console's key, Badge Arcade's Japanese letter holds
+  two payloads: one for the game (`0004000000134600`) and the letter for the news module
+  (`0004013000003502`). Ours hold only the letter. What the game's payload does is still
+  open.
+- **Still to check (encrypted):** run
+  `python make_letter.py compare --reference --boot9 boot9.bin --extract out/reference`.
+  It shows the real datatype (we use the guess 0x20001), the content flags and the payloads
+  next to ours, and saves the game's payload for a closer look.
 
 ## Verified vs. unverified
 **Verified (by me, locally or from primary sources):**
