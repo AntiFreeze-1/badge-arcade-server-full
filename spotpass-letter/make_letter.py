@@ -429,17 +429,27 @@ def build_container_plain(payload: bytes, program_id: int, datatype: int, ns_dat
                           version: int, mark_arrived_always: bool = True) -> bytes:
 	"""Content header + payload header + payload, i.e. everything after the
 	0x28-byte BOSS header, before encryption."""
-	ph = struct.pack(">QIIIII", program_id, 0, datatype, len(payload), ns_data_id, version)
-	ph_hash = hashlib.sha256(ph + b"\x00\x00" + payload).digest()
-	payload_header = ph + ph_hash + bytes(0x100)          # RSA signature: zeros
+	return build_container_plain_multi([(payload, program_id, datatype, ns_data_id, version)], mark_arrived_always)
+
+
+def build_container_plain_multi(payloads: list[tuple[bytes, int, int, int, int]], mark_arrived_always: bool = True) -> bytes:
+	"""Like build_container_plain with several (payload, program ID, datatype, nsDataId,
+	version) payloads, each after its own header (Nintendo's letters had two)."""
 	ch = bytearray(0x12)
 	if mark_arrived_always:
 		ch[0] |= 0x80
-	struct.pack_into(">H", ch, 0x10, 1)                   # one payload
+	struct.pack_into(">H", ch, 0x10, len(payloads))
 	ch_hash = hashlib.sha256(bytes(ch) + b"\x00\x00").digest()
 	content_header = bytes(ch) + ch_hash + bytes(0x100)   # RSA signature: zeros
-	assert len(content_header) == CONTENT_HEADER_SIZE and len(payload_header) == PAYLOAD_HEADER_SIZE
-	return content_header + payload_header + payload
+	assert len(content_header) == CONTENT_HEADER_SIZE
+	body = content_header
+	for payload, program_id, datatype, ns_data_id, version in payloads:
+		ph = struct.pack(">QIIIII", program_id, 0, datatype, len(payload), ns_data_id, version)
+		ph_hash = hashlib.sha256(ph + b"\x00\x00" + payload).digest()
+		payload_header = ph + ph_hash + bytes(0x100)      # RSA signature: zeros
+		assert len(payload_header) == PAYLOAD_HEADER_SIZE
+		body += payload_header + payload
+	return body
 
 
 def build_boss_header(total_size: int, serial: int, iv12: bytes) -> bytes:
@@ -683,10 +693,11 @@ def comparison(real: bytes, key: bytes) -> list[tuple[str, str, str]]:
 	"""(field, Nintendo's value, ours) for a real letter container and one this script
 	builds with the same title, text and picture."""
 	info, payloads = parse_container(real, key)
-	if len(payloads) != 1 or payloads[0].program_id != NEWS_PROGRAM_ID:
+	letters = [p for p in payloads if p.program_id == NEWS_PROGRAM_ID]
+	if len(letters) != 1:
 		kinds = ", ".join(f"{p.program_id:016X}" for p in payloads)
-		raise ValueError(f"not a single letter for the news module (payloads: {kinds})")
-	real_payload = payloads[0]
+		raise ValueError(f"expected one payload for the news module {NEWS_PROGRAM_ID:016X} (payloads: {kinds})")
+	real_payload = letters[0]
 	news = real_payload.content
 	if len(news) < NEWS_BODY_SIZE:
 		raise ValueError(f"the letter is {len(news)} bytes, shorter than the {NEWS_BODY_SIZE:#x}-byte layout we use")
@@ -707,7 +718,8 @@ def comparison(real: bytes, key: bytes) -> list[tuple[str, str, str]]:
 
 	rows = [
 		("container: content flags", f"{info['flags0']:#04x}", f"{ours_info['flags0']:#04x}"),
-		("container: payloads", str(info["payload_count"]), str(ours_info["payload_count"])),
+		("container: payloads", ", ".join(f"{p.program_id:016X}" for p in payloads),
+			", ".join(f"{p.program_id:016X}" for p in ours_payloads)),
 		("container: hash / RSA type", f"{info['hash_type']} / {info['rsa_type']}", f"{ours_info['hash_type']} / {ours_info['rsa_type']}"),
 		("payload: program ID", f"{real_payload.program_id:016X}", f"{ours.program_id:016X}"),
 		("payload: datatype", f"{real_payload.datatype:#x}", f"{ours.datatype:#x}"),
@@ -740,12 +752,24 @@ def cmd_compare(args) -> int:
 	if not files:
 		raise SystemExit("give container files to compare, or --reference")
 	for path in files:
-		rows = comparison(path.read_bytes(), key)
+		data = path.read_bytes()
+		rows = comparison(data, key)
 		print(f"\n{path.name}: Nintendo's letter next to the same letter built by this script")
 		width = max(len(r[0]) for r in rows)
 		for name, real, ours in rows:
 			mark = "" if not ours or real == ours else "   <-- DIFFERENT"
 			print(f"  {name:{width}}  {real:24} {ours}{mark}")
+		others = [p for p in parse_container(data, key)[1] if p.program_id != NEWS_PROGRAM_ID]
+		for i, other in enumerate(others):
+			print(f"\n  Nintendo's container also has a payload for {other.program_id:016X}: datatype {other.datatype:#x}, "
+				f"nsDataId {other.ns_data_id:#x}, version {other.version}, {len(other.content)} bytes")
+			print(hexdump(other.content, 0x100))
+			if args.extract:
+				dest = Path(args.extract)
+				dest.mkdir(parents=True, exist_ok=True)
+				out = dest / f"{path.stem}_{other.program_id:016X}_{i}.bin"
+				out.write_bytes(other.content)
+				print(f"  saved to {out}")
 	return 0
 
 
@@ -821,6 +845,7 @@ def main(argv=None) -> int:
 	c = sub.add_parser("compare", help="compare real Nintendo letter containers with what this script builds")
 	c.add_argument("files", nargs="*", help="real news containers (e.g. from the SpotPass Archive)")
 	c.add_argument("--reference", action="store_true", help="download a real Badge Arcade letter from the SpotPass Archive and compare it")
+	c.add_argument("--extract", help="directory to save the container's other payloads in")
 	add_key_args(c)
 	c.set_defaults(func=cmd_compare)
 

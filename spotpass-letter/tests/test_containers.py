@@ -143,3 +143,27 @@ def test_compare_with_a_real_letter():
 	assert rows["payload: program ID"][0] == rows["payload: program ID"][1]
 	assert rows["letter: flags"][0] == rows["letter: flags"][1]  # rebuilt with the real letter's own flag values
 	assert rows["letter: header, title, message"][0] == "same bytes"
+
+
+def test_compare_with_two_payloads(capsys, tmp_path, monkeypatch):
+	# Nintendo's Badge Arcade letter carries a payload for the game next to the letter
+	news = make_letter.build_news_payload(make_letter.Letter("Hi", "There", ns_data_id=7))
+	plain = make_letter.build_container_plain_multi([
+		(b"game data", 0x0004000000134600, 0x10001, 7, 1),
+		(news, make_letter.NEWS_PROGRAM_ID, 0x20001, 7, 1),
+	])
+	container = make_letter.encrypt_container(KEY, plain, 5)
+	_, payloads = make_letter.parse_container(container, KEY)
+	assert [p.content for p in payloads] == [b"game data", news]
+
+	rows = {name: (real, ours) for name, real, ours in make_letter.comparison(container, KEY)}
+	assert rows["container: payloads"] == ("0004000000134600, 0004013000003502", "0004013000003502")
+	assert rows["payload: datatype"] == ("0x20001", "0x20001")
+
+	path = tmp_path / "real.boss"
+	path.write_bytes(container)
+	monkeypatch.setattr(make_letter, "load_key", lambda args: KEY)
+	assert make_letter.main(["compare", str(path), "--extract", str(tmp_path / "x")]) == 0
+	out = capsys.readouterr().out
+	assert "also has a payload for 0004000000134600" in out and "game data" in out
+	assert (tmp_path / "x" / "real_0004000000134600_0.bin").read_bytes() == b"game data"
