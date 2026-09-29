@@ -22,7 +22,7 @@ KEY = bytes(range(16))
 @pytest.fixture(autouse=True)
 def private_dirs(tmp_path: Path, monkeypatch):
 	monkeypatch.setattr(letters, "LETTERS_DIR", tmp_path / "letters")
-	monkeypatch.setattr(serve, "LIVE_NEWS", tmp_path / "other" / "news_v131.dat.boss")
+	monkeypatch.setattr(serve, "LIVE_NEWS", tmp_path / "other" / "news.dat.boss")
 	monkeypatch.setattr(serve, "STATE", tmp_path / "serve_state.json")
 	(tmp_path / "other").mkdir()
 
@@ -89,6 +89,9 @@ def test_serve_and_remove_letter():
 	message = serve.serve_letter(saved, KEY)
 	assert "is live" in message
 
+	# Under both names the console might ask for
+	assert [p.name for p in serve.news_files()] == ["news.dat.boss", "news_v131.dat.boss"]
+	assert serve.news_files()[0].read_bytes() == serve.news_files()[1].read_bytes()
 	_, payloads = make_letter.parse_container(serve.LIVE_NEWS.read_bytes(), KEY)
 	payload = payloads[0]
 	assert payload.program_id == make_letter.NEWS_PROGRAM_ID and payload.ns_data_id == saved.ns_data_id
@@ -102,7 +105,7 @@ def test_serve_and_remove_letter():
 	assert serve.mark_letter_downloaded() is None  # only once
 
 	assert serve.remove_letter() == "The letter was taken down."
-	assert not serve.LIVE_NEWS.exists() and serve.live_letter() is None
+	assert not any(p.exists() for p in serve.news_files()) and serve.live_letter() is None
 	assert letters.load_letter(saved.id).sent  # still in the history
 
 
