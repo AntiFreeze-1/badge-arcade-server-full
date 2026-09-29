@@ -1,6 +1,7 @@
 """Usage: python -m badge_arcade [config.json] [-v] [--public-host IP]"""
 
 import argparse
+import errno
 import logging
 import sys
 
@@ -40,6 +41,19 @@ def main() -> None:
 		anyio.run(serve_forever, config)
 	except KeyboardInterrupt:
 		pass
+	except (OSError, BaseExceptionGroup) as e:
+		if not address_in_use(e):
+			raise
+		sys.exit(f"A port the server needs (HTTP {config.http_port}, UDP {config.auth_port}/{config.secure_port}) is "
+			"already in use: the server is probably already running (close the other one first), or change the "
+			"ports in config.json.")
+
+
+def address_in_use(error: BaseException) -> bool:
+	"""Whether an error (or any error in an exception group) is "address already in use"."""
+	if isinstance(error, BaseExceptionGroup):
+		return any(address_in_use(e) for e in error.exceptions)
+	return isinstance(error, OSError) and (error.errno == errno.EADDRINUSE or getattr(error, "winerror", None) == 10048)
 
 
 if __name__ == "__main__":

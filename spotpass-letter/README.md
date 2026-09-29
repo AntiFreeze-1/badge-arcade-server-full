@@ -220,21 +220,35 @@ python make_letter.py build --boot9 path\to\boot9.bin ^
   for the same text and picture, marking any that differ.
 
 ## Delivering it
+A letter goes out two ways at once:
+
+- **Inside playinfo (the reliable way).** The 3DS downloads `playinfo_v131.dat`
+  (the FGONLYT task) every time Badge Arcade opens. The letter is added to it as a second
+  payload for the news module, the way Nintendo packed its own letters (Badge Arcade's
+  real Japanese letter had a game payload and a letter payload in one file). SpotPass
+  hands each payload to the program it names, so the letter reaches the Notifications
+  applet as soon as the game has downloaded its data. The game's own payload is
+  unchanged; it gets a new SpotPass ID so the 3DS downloads it again. This needs a live
+  playinfo, which the first free plays create.
+- **As the news task's file** (`news.dat` / `news_v131.dat`). The 3DS runs that task on
+  its own schedule, often in sleep mode, and the user's server log showed it never ran
+  while connected through the proxy. When it runs elsewhere it reaches Pretendo's server
+  instead, which is how Pretendo's "Badge Arcade is Back!" letter arrived. That letter
+  also showed the console accepts SpotPass files with blank signatures.
+
+Steps:
 1. Back up first: in GodMode9, copy `1:/data/<id0>/sysdata/00010035/00000000` (the
    news save) to the SD card. Having a NAND backup is wise too.
-2. Send it from the Letters tab (or `python serve.py letter`), or copy a file made
-   with `make_letter.py build` to `other/news.dat.boss` and `other/news_v131.dat.boss`. The server serves it and
-   the proxy picks up the new file list within 60 s. Nothing needs restarting.
-3. Leave the console in sleep mode with Wi-Fi on and the proxy and server running,
-   possibly for hours. Watch mitm.log for
-   `Redirecting https://npdl.cdn.nintendowifi.net/p01/nsa/OvbmGLZ9senvgV3K/news/...`
-   and server.log for `Sent SpotPass file news.dat.boss` (or `news_v131.dat.boss`).
-4. If it's downloaded but no letter appears, the likely causes are the signature check
-   (not patched), a wrong payload layout, or the datatype. Try `--datatype 0x10001`.
-   If it's never requested, the news task isn't registered or isn't running. Check it:
-   copy `1:/data/<id0>/sysdata/00010034/00000000` (the BOSS save) and run
-   `python make_letter.py find-urls <file>`.
-5. Undo: **Take letter down** (or delete the file from `other/`). You can delete the
+2. Send it from the Letters tab (or `python serve.py letter`). The proxy picks up the
+   new file list within 60 s. Nothing needs restarting.
+3. With the server and proxy running, open Badge Arcade and let it finish "Downloading
+   Data". server.log shows `Sent SpotPass file playinfo_v131.dat.boss`, and the Letters
+   tab marks the letter as downloaded. Close the game and open Notifications.
+4. If Badge Arcade can't download its data after a letter was sent, press **Take letter
+   down**: playinfo goes back to the game's payload alone. If it's downloaded but no
+   letter appears, the payload layout or datatype is the suspect (`make_letter.py
+   compare` checks them against Nintendo's letter).
+5. Undo: **Take letter down** (or `python serve.py letter --remove`). You can delete the
    letter in the Notifications applet.
 
 ## Checked against real letters
