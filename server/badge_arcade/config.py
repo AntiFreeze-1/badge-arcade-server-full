@@ -77,6 +77,10 @@ class Config:
 	# Get_PID_Passwrd homebrew ("pid:password" lines). Re-read when it changes.
 	nex_keys_file: str | None = "nex-keys.txt"
 
+	# Maintenance state written by the manager's Maintenance tab (see maintenance.py).
+	# Read again when it changes, so no restart is needed.
+	maintenance_file: str | None = "maintenance.json"
+
 	# Used for any PID that has no known password. Only useful if you know
 	# every console you use shares it.
 	default_nex_password: str | None = None
@@ -140,6 +144,10 @@ class Config:
 	@property
 	def nex_keys_path(self) -> Path | None:
 		return self.resolve(self.nex_keys_file) if self.nex_keys_file else None
+
+	@property
+	def maintenance_path(self) -> Path | None:
+		return self.resolve(self.maintenance_file) if self.maintenance_file else None
 
 	@property
 	def http_base_url(self) -> str:

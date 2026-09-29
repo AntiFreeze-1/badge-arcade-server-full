@@ -3,6 +3,7 @@
 from nintendo.nex import authentication, common, rmc, settings
 
 from ..config import Config
+from ..maintenance import MAINTENANCE_ERROR, MaintenanceFile
 from ..nex_common import SECURE_SERVER_PID, build_ticket, secure_station_url, user_key_from_secret
 from ..nex_keys import NexKeysFile
 from ..storage import Storage
@@ -21,6 +22,7 @@ class AuthenticationServer(authentication.AuthenticationServer):
 		self.config = config
 		self.storage = storage
 		self.nex_keys = NexKeysFile(config.nex_keys_path)
+		self.maintenance = MaintenanceFile(config.maintenance_path)
 
 	def lookup_secret(self, pid: int, client: rmc.RMCClient) -> tuple[str, str] | None:
 		"""Finds the NEX password (or derived key) for a PID, and where it came from."""
@@ -102,6 +104,14 @@ class AuthenticationServer(authentication.AuthenticationServer):
 			logger.warning("Login with non-numeric username %r rejected", username)
 			pid = None
 
+		if self.maintenance.current().active():
+			logger.info("Login from PID %s refused: the server is in maintenance", pid)
+			response.result = common.Result.error(MAINTENANCE_ERROR)
+			response.pid = 0
+			response.ticket = b""
+			response.server_name = ""
+			return response
+
 		user_key = self.user_key(pid, client) if pid is not None else None
 		if user_key is None:
 			# An unknown user gets a successful call with the error in the
@@ -123,6 +133,10 @@ class AuthenticationServer(authentication.AuthenticationServer):
 			logger.warning("Ticket requested for unknown target PID %i", target)
 
 		response = rmc.RMCResponse()
+		if self.maintenance.current().active():
+			response.result = common.Result.error(MAINTENANCE_ERROR)
+			response.ticket = b""
+			return response
 		user_key = self.user_key(source, client)
 		if user_key is None:
 			response.result = common.Result.error("RendezVous::InvalidUsername")

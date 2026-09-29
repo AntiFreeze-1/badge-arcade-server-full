@@ -76,6 +76,7 @@ pip install --no-deps "anynet~=1.2" "nintendoclients==5.0.0"
 | `accounts` | Alternative to `nex_keys_file`: `{"<PID>": "<NEX password>"}` |
 | `default_nex_password` | Fallback password for PIDs not listed |
 | `maintenance` | Values returned by `GetMaintenanceStatus` (defaults match Pretendo's) |
+| `maintenance_file` | Where the manager's Maintenance tab keeps its state (`maintenance.json` next to the config). While maintenance is on, logins get `RendezVous::GameServerMaintenance` and the 3DS shows the maintenance error; the file is read again when it changes, so no restart is needed |
 | `game_date` | Date (`YYYY-MM-DD`) the server tells the game at login. `null` (the default) = the current date. Served SpotPass weeks are moved to this date (see below) |
 | `nex_settings` | Raw NintendoClients setting overrides, e.g. `{"prudp.resend_limit": 8}` |
 

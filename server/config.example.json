@@ -12,6 +12,7 @@
 	"boss_dir": "../other",
 
 	"nex_keys_file": "nex-keys.txt",
+	"maintenance_file": "maintenance.json",
 	"accounts": {},
 	"default_nex_password": null,
 
