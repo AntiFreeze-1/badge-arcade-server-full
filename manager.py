@@ -599,7 +599,7 @@ class Manager(tk.Tk):
 		serving = self.server_ip() if self.server.listening() else None
 		expected = self.live_hotspot_ip() or ip
 		if serving and serving != expected:
-			warning = (f"The server gives the 3DS {serving}, but it should be {expected} now. Restart the server"
+			warning = (f"The server gives the 3DS {serving}, but it should be {expected} now. Restarting the server is reccomended"
 				+ ("." if hotspot_mode else f", and change the proxy server on the 3DS to {ip}."))
 			self.ip_warning.configure(text=warning)
 			self.status.set(warning)
