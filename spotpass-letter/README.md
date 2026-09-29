@@ -270,17 +270,24 @@ Badge Arcade's Japanese one. They show the letter as Nintendo sent it:
   a new one.
 - **Size:** the letters are 54–58 KB, which is the 0x60 header, 0x1780 bytes of text and
   a picture of about 50 KB after the container and payload headers.
-- **Two payloads:** decrypted with a console's key, Badge Arcade's Japanese letter holds
-  two payloads: one for the game (`0004000000134600`) and the letter for the news module
-  (`0004013000003502`). Ours hold only the letter. What the game's payload does is still
-  open.
-- **Still to check (encrypted):** run
-  `python make_letter.py compare --reference --boot9 boot9.bin --extract out/reference`.
-  It shows the real datatype (we use the guess 0x20001), the content flags and the payloads
-  next to ours, and saves the game's payload for a closer look.
+- **Decrypted** (`make_letter.py compare --reference`, run with a console's key on Badge
+  Arcade's real Japanese letter):
+  - **Letter payload:** program ID `0004013000003502`, datatype `0x20001` and version 1
+    match ours. The letter itself (header, flags, title, message and picture) is byte for
+    byte what this script builds from the same text.
+  - **Content flags:** 0x00. Pretendo's boss-crypto sets 0x80 ("always mark arrived"),
+    which this script used to copy; it now uses 0x00 like Nintendo.
+  - **A second payload** for the game (`0004000000134600`, datatype `0x10010`, 585 bytes):
+    a SARC with an empty `Schedule.xml` and `emergencyStop/emergencyStop` containing
+    `emergency`. It's a switch for the Japanese game's SpotPass, not part of the letter,
+    so our letters **don't** include it.
+  - In the letter's own header, the version field is 0 and the payload header's is 1.
+    Ours uses 1 for both, which is what all 178 saved letters show.
 
 ## Verified vs. unverified
 **Verified (by me, locally or from primary sources):**
+- The content datatype `0x20001` and the payload layout, against Nintendo's real Badge
+  Arcade letter (see above).
 - The BOSS header layout matches the real files in `other/` (read-only check).
 - The container builder follows Pretendo's boss-crypto field by field. The
   build → encrypt → decrypt → hash check → compare round trip passes, and the AES code
@@ -293,14 +300,6 @@ Badge Arcade's Japanese one. They show the letter as Nintendo sent it:
   serve the file.
 
 **Unverified:**
-- The news payload layout as sent (the stored layout is confirmed, see above). It comes from Rokkubro's unmerged Citra BOSS branch
-  (`SendNewsMessage`: 0x60 header with the title at 0x20, then a 0x1780 message, then
-  the image), written from real downloads in 2023 but marked "Looks like". The meaning
-  of the first 0x20 bytes, the little-endian byte order and the flag values come from
-  the news.db header and the real letters.
-- The content datatype. `0x20001` is a guess: it is yellows8 bosstool's default, and
-  3dbrew mentions "0x20001 in eShop strings". `make_letter.py compare --reference`
-  settles it (see above).
 - Whether Luma3DS really bypasses the BOSS RSA check (Pretendo's claim).
 - Whether the `news` task is registered and when it runs, and the letter case of the
   language path (irrelevant here).
