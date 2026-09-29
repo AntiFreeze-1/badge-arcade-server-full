@@ -246,7 +246,7 @@ class Manager(tk.Tk):
 		self.update_text.pack(side="left")
 		ttk.Button(self.update_banner, text="Update now", command=lambda: self.install_update(ask=True)).pack(side="left", padx=6)
 		ttk.Button(self.update_banner, text="What's new", command=lambda: webbrowser.open(
-			(self.settings.get("update_release") or {}).get("page_url") or f"https://github.com/{update.REPOSITORY}/releases")
+			(self.settings.get("update_release") or {}).get("page_url") or update.CHANGES_URL)
 		).pack(side="left")
 
 		checks = ttk.LabelFrame(tab, text="Checklist", padding=10)

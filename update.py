@@ -2,17 +2,19 @@
 
   python update.py              check, then ask before installing
   python update.py --check      only check (exit code 0: up to date, 10: update available, 1: error)
-  python update.py --apply      install the newest release (asks first; --yes doesn't)
+  python update.py --apply      install the newest version (asks first; --yes doesn't)
 
-New versions are the GitHub releases of this project. A git checkout is
-updated with "git pull --ff-only"; otherwise the release's files are copied
-over this folder. Your own files are never touched: server/config.json, saves
+The newest version is whatever is on the project's main branch on GitHub: when
+its version.txt holds a higher number than this folder's version.txt, there's
+an update. A git checkout is updated with "git pull --ff-only"; otherwise the
+main branch's files are downloaded and copied over this folder. Your own files are never touched: server/config.json, saves
 (server/data/), SpotPass files (other/), keys and dumps, the manager's
 settings, and anything else .gitignore lists. The files an update replaces are
 zipped into backups/ first. Stop the server and proxy before updating.
 
 Uses only Python's standard library, so it works before the packages are
-installed. BADGE_ARCADE_UPDATE_URL overrides the release API address.
+installed. BADGE_ARCADE_VERSION_URL and BADGE_ARCADE_ZIP_URL override where
+the version number and the files are downloaded from.
 """
 
 from pathlib import Path, PurePosixPath
@@ -31,16 +33,21 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parent
-VERSION_FILE = ROOT / "VERSION"
+VERSION_NAME = "version.txt"
+VERSION_FILE = ROOT / VERSION_NAME
 REPOSITORY = "AntiFreeze-1/badge-arcade-server-full"
-RELEASE_API = os.environ.get("BADGE_ARCADE_UPDATE_URL", f"https://api.github.com/repos/{REPOSITORY}/releases/latest")
+BRANCH = "main"
+VERSION_URL = os.environ.get("BADGE_ARCADE_VERSION_URL",
+	f"https://raw.githubusercontent.com/{REPOSITORY}/{BRANCH}/{VERSION_NAME}")
+ZIP_URL = os.environ.get("BADGE_ARCADE_ZIP_URL", f"https://github.com/{REPOSITORY}/archive/refs/heads/{BRANCH}.zip")
+CHANGES_URL = f"https://github.com/{REPOSITORY}/commits/{BRANCH}"
 BACKUP_DIR = ROOT / "backups"
-# Files installed by the last zip update, so the next one can remove files a release dropped
+# Files installed by the last zip update, so the next one can remove files a new version dropped
 MANIFEST = ROOT / ".update-manifest.json"
 
 UP_TO_DATE, UPDATE_AVAILABLE, ERROR = 0, 10, 1
 
-# Never written or removed by an update, whatever the release contains
+# Never written or removed by an update, whatever the download contains
 # (.gitignore's patterns are added to these)
 PROTECTED = [
 	".git/", ".update-manifest.json", "/backups/", "/other/", "/manager_settings.json",
@@ -77,41 +84,36 @@ def is_newer(latest: str, current: str) -> bool:
 	try:
 		current_parts = parse_version(current)
 	except ValueError:
-		return True  # unknown local version: any release is an update
+		return True  # unknown local version: anything is an update
 	return parse_version(latest) > current_parts
 
 
-def latest_release(timeout: float = 10) -> dict | None:
-	"""{"version", "tag", "zip_url", "page_url"} of the newest release, or None if there are none."""
-	request = urllib.request.Request(RELEASE_API, headers={
-		"Accept": "application/vnd.github+json", "User-Agent": "badge-arcade-updater",
-	})
+def latest_version(timeout: float = 10) -> dict | None:
+	"""{"version", "zip_url", "page_url"} for the main branch's version.txt, or None if
+	GitHub has no version.txt there (or the repository isn't public)."""
+	request = urllib.request.Request(VERSION_URL, headers={"User-Agent": "badge-arcade-updater", "Cache-Control": "no-cache"})
 	try:
 		with urllib.request.urlopen(request, timeout=timeout) as response:
-			release = json.load(response)
+			text = response.read(100).decode("utf-8", "replace").strip()
 	except urllib.error.HTTPError as e:
 		if e.code == 404:
-			return None  # no releases yet (or the repository isn't public)
+			return None
 		if e.code in (403, 429):
-			raise UpdateError("GitHub's rate limit was reached; try again in an hour") from e
+			raise UpdateError("GitHub is refusing requests for now; try again in an hour") from e
 		raise UpdateError(f"GitHub answered {e.code} {e.reason}") from e
-	except (urllib.error.URLError, OSError, ValueError) as e:
+	except (urllib.error.URLError, OSError) as e:
 		raise UpdateError(f"couldn't reach GitHub: {getattr(e, 'reason', e)}") from e
 
-	tag = release.get("tag_name", "")
 	try:
-		parse_version(tag)
+		parse_version(text)
 	except ValueError as e:
-		raise UpdateError(f"the newest release has an unexpected tag {tag!r}") from e
-	return {
-		"version": tag.removeprefix("v"), "tag": tag,
-		"zip_url": release.get("zipball_url"), "page_url": release.get("html_url"),
-	}
+		raise UpdateError(f"the version.txt on GitHub holds {text[:20]!r}, not a version number") from e
+	return {"version": text.removeprefix("v"), "zip_url": ZIP_URL, "page_url": CHANGES_URL}
 
 
 def check(timeout: float = 10) -> dict | None:
-	"""The newest release if it's newer than this install, else None."""
-	release = latest_release(timeout)
+	"""The newest version if it's newer than this install, else None."""
+	release = latest_version(timeout)
 	return release if release and is_newer(release["version"], current_version()) else None
 
 
@@ -148,8 +150,8 @@ def is_protected(path: str, patterns: list[str]) -> bool:
 	return False
 
 
-def release_files(archive: zipfile.ZipFile) -> dict[str, zipfile.ZipInfo]:
-	"""The files in a GitHub release zip by project path (without the zip's top folder).
+def zip_files(archive: zipfile.ZipFile) -> dict[str, zipfile.ZipInfo]:
+	"""The files in a GitHub download zip by project path (without the zip's top folder).
 	Raises UpdateError for paths that would land outside the project."""
 	files = {}
 	for info in archive.infolist():
@@ -158,10 +160,10 @@ def release_files(archive: zipfile.ZipFile) -> dict[str, zipfile.ZipInfo]:
 		name = info.filename.replace("\\", "/")
 		parts = PurePosixPath(name).parts
 		if name.startswith("/") or ":" in parts[0] or ".." in parts or len(parts) < 2:
-			raise UpdateError(f"the release zip contains an unsafe path: {info.filename}")
+			raise UpdateError(f"the download contains an unsafe path: {info.filename}")
 		files["/".join(parts[1:])] = info
-	if "VERSION" not in files:
-		raise UpdateError("the release zip doesn't look like this project (no VERSION file)")
+	if VERSION_NAME not in files:
+		raise UpdateError(f"the download doesn't look like this project (no {VERSION_NAME})")
 	return files
 
 
@@ -205,20 +207,27 @@ def download(url: str, timeout: float = 60) -> bytes:
 		with urllib.request.urlopen(request, timeout=timeout) as response:
 			return response.read()
 	except (urllib.error.URLError, OSError) as e:
-		raise UpdateError(f"couldn't download the release: {getattr(e, 'reason', e)}") from e
+		raise UpdateError(f"couldn't download the new version: {getattr(e, 'reason', e)}") from e
 
 
-def install_zip(data: bytes, root: Path = ROOT, backup_dir: Path | None = None) -> Path | None:
-	"""Copies a release zip's files over root. Returns the backup of the replaced files (None if none)."""
+def install_zip(data: bytes, root: Path = ROOT, backup_dir: Path | None = None, newer_than: str | None = None) -> Path | None:
+	"""Copies a downloaded zip's files over root. Returns the backup of the replaced files (None if none).
+	With newer_than, refuses a download whose version.txt isn't newer than that version."""
 	backup_dir = backup_dir or root / "backups"
 	try:
 		archive = zipfile.ZipFile(io.BytesIO(data))
 	except zipfile.BadZipFile as e:
-		raise UpdateError("the downloaded release isn't a valid zip") from e
+		raise UpdateError("the download isn't a valid zip") from e
 
 	patterns = ignore_patterns(root)
 	with archive:
-		files = {path: info for path, info in release_files(archive).items() if not is_protected(path, patterns)}
+		all_files = zip_files(archive)
+		if newer_than is not None:
+			downloaded = archive.read(all_files[VERSION_NAME]).decode("utf-8", "replace").strip()
+			if not is_newer(downloaded, newer_than):
+				# raw.githubusercontent.com can show a new version.txt a few minutes before the zip has it
+				raise UpdateError(f"the download is version {downloaded[:20]}, not newer than {newer_than}; try again in a few minutes")
+		files = {path: info for path, info in all_files.items() if not is_protected(path, patterns)}
 		try:
 			previous = set(json.loads((root / MANIFEST.name).read_text(encoding="utf-8")))
 		except (OSError, ValueError):
@@ -255,7 +264,7 @@ def install_packages() -> None:
 
 
 def apply(release: dict) -> str:
-	"""Installs a release. Returns a summary."""
+	"""Installs the newest version (from latest_version/check). Returns a summary."""
 	running = running_services()
 	if running:
 		raise UpdateError(f"stop the {' and '.join(running)} first (they're running on this PC)")
@@ -265,8 +274,8 @@ def apply(release: dict) -> str:
 		summary = "Updated the git checkout."
 	else:
 		if not release.get("zip_url"):
-			raise UpdateError("the release has no download")
-		backup = install_zip(download(release["zip_url"]))
+			raise UpdateError("there's nothing to download")
+		backup = install_zip(download(release["zip_url"]), newer_than=current_version())
 		summary = f"Installed version {release['version']}."
 		if backup:
 			summary += f" The replaced files are backed up in {backup.relative_to(ROOT)}."
@@ -282,24 +291,24 @@ def main(argv: list[str] | None = None) -> int:
 	parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 	mode = parser.add_mutually_exclusive_group()
 	mode.add_argument("--check", action="store_true", help="only check for an update")
-	mode.add_argument("--apply", action="store_true", help="install the newest release")
+	mode.add_argument("--apply", action="store_true", help="install the newest version")
 	parser.add_argument("--yes", action="store_true", help="don't ask before installing")
 	args = parser.parse_args(argv)
 
 	print(f"Installed version: {current_version()}")
 	try:
-		release = latest_release()
+		release = latest_version()
 	except UpdateError as e:
 		print(f"Couldn't check for updates: {e}.")
 		return ERROR
 	if release is None:
-		print(f"No releases are published at {RELEASE_API}.")
+		print(f"There's no version.txt at {VERSION_URL}.")
 		return UP_TO_DATE
 	if not is_newer(release["version"], current_version()):
-		print(f"This is the newest version ({release['version']} is the latest release).")
+		print(f"This is the newest version (GitHub has {release['version']}).")
 		return UP_TO_DATE
 
-	print(f"Version {release['version']} is available: {release['page_url']}")
+	print(f"Version {release['version']} is available. What changed: {release['page_url']}")
 	if args.check:
 		return UPDATE_AVAILABLE
 	if not args.yes:
