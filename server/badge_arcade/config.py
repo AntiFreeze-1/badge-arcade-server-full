@@ -1,6 +1,7 @@
 """Configuration loading for the Badge Arcade server."""
 
 from dataclasses import dataclass, field
+import ipaddress
 from pathlib import Path
 import datetime
 import json
@@ -11,6 +12,18 @@ logger = logging.getLogger(__name__)
 
 # kerberos_password values that come with the code (install.py makes a random one)
 PLACEHOLDER_PASSWORDS = {"change-me", "replace-with-a-random-string"}
+
+
+def local_address_toward(ip: str) -> str | None:
+	"""This PC's address on the route to ip (the one a device at ip can reach it on). No
+	packet is sent."""
+	with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+		try:
+			s.connect((ip, 1))
+			address = s.getsockname()[0]
+		except OSError:
+			return None
+	return None if address == "0.0.0.0" else address
 
 
 def lan_address() -> str | None:
@@ -84,9 +97,33 @@ class Config:
 
 	base_dir: Path = field(default_factory=Path.cwd)
 
+	# Whether public_host was set to an address (rather than "auto"). An address is always
+	# used as it is; otherwise each 3DS gets the address it can reach (see address_for).
+	public_host_fixed: bool = field(init=False, default=False)
+	_announced: set = field(init=False, default_factory=set, repr=False)
+
 	def __post_init__(self):
-		if self.public_host in ("auto", ""):
+		self.public_host_fixed = self.public_host not in ("auto", "")
+		if not self.public_host_fixed:
 			self.public_host = lan_address() or "127.0.0.1"
+
+	def address_for(self, console_ip: str | None) -> str:
+		"""The address to give a 3DS at console_ip: this PC's address on the route to it
+		(the hotspot's address for a 3DS on the hotspot, the LAN address otherwise), so it
+		stays right when the hotspot starts after the server or the PC changes network.
+		public_host when it's fixed in the config, or when the route can't be found."""
+		if self.public_host_fixed or not console_ip:
+			return self.public_host
+		try:
+			if ipaddress.ip_address(console_ip).version != 4:
+				return self.public_host
+		except ValueError:
+			return self.public_host
+		address = local_address_toward(console_ip) or self.public_host
+		if address != self.public_host and (console_ip, address) not in self._announced:
+			self._announced.add((console_ip, address))
+			logger.info("Giving the 3DS at %s the server address %s", console_ip, address)
+		return address
 
 	def resolve(self, path: str) -> Path:
 		p = Path(path)
@@ -108,6 +145,10 @@ class Config:
 	def http_base_url(self) -> str:
 		return f"http://{self.public_host}:{self.http_port}"
 
+	def http_url_for(self, console_ip: str | None) -> str:
+		"""http_base_url with the address a 3DS at console_ip can reach (see address_for)."""
+		return f"http://{self.address_for(console_ip)}:{self.http_port}"
+
 
 def load_config(path: str | Path | None) -> Config:
 	if path is None:
@@ -122,7 +163,7 @@ def load_config(path: str | Path | None) -> Config:
 	maintenance = MaintenanceConfig(**raw.pop("maintenance", {}))
 	accounts = {int(pid): str(pw) for pid, pw in raw.pop("accounts", {}).items()}
 
-	known = set(Config.__dataclass_fields__) - {"base_dir", "maintenance", "accounts"}
+	known = set(Config.__dataclass_fields__) - {"base_dir", "maintenance", "accounts", "public_host_fixed", "_announced"}
 	unknown = set(raw) - known
 	if unknown:
 		raise ValueError(f"Unknown config keys: {', '.join(sorted(unknown))}")

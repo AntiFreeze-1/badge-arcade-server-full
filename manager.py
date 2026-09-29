@@ -598,13 +598,17 @@ class Manager(tk.Tk):
 		self.ip_label.configure(text=ip)
 		serving = self.server_ip() if self.server.listening() else None
 		expected = self.live_hotspot_ip() or ip
+		warning = ""
 		if serving and serving != expected:
-			warning = (f"The server gives the 3DS {serving}, but it should be {expected} now. Restarting the server is reccomended"
-				+ ("." if hotspot_mode else f", and change the proxy server on the 3DS to {ip}."))
-			self.ip_warning.configure(text=warning)
+			if public_host_fixed():
+				warning = (f"The server gives the 3DS {serving}, but it should be {expected} now. Restarting the server is reccomended"
+					+ ("." if hotspot_mode else f", and change the proxy server on the 3DS to {ip}."))
+			elif not hotspot_mode:
+				# The server gives each 3DS the address it can reach; only the 3DS's proxy setting is out of date
+				warning = f"This PC's address is now {ip}: change the proxy server on the 3DS to {ip}."
+		self.ip_warning.configure(text=warning)
+		if warning:
 			self.status.set(warning)
-		else:
-			self.ip_warning.configure(text="")
 		self.after(3000, self.refresh_services)
 
 	def server_ip(self) -> str | None:
@@ -1389,6 +1393,16 @@ class Manager(tk.Tk):
 					self.background("Turning the hotspot off...", hotspot.turn_off, lambda _: self.destroy())
 					return
 		self.destroy()
+
+
+def public_host_fixed() -> bool:
+	"""Whether server/config.json sets public_host to an address (instead of "auto", which
+	makes the server give each 3DS the address it can reach)."""
+	try:
+		value = json.loads((SERVER_DIR / "config.json").read_text(encoding="utf-8")).get("public_host", "auto")
+	except (OSError, ValueError):
+		return False
+	return value not in ("auto", "", None)
 
 
 def hotspot_address() -> str | None:

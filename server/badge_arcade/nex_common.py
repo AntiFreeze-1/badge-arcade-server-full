@@ -56,9 +56,9 @@ def secure_server_key(config: Config) -> bytes:
 	return derive_user_key(config.kerberos_password, SECURE_SERVER_PID)
 
 
-def secure_station_url(config: Config) -> common.StationURL:
+def secure_station_url(config: Config, host: str | None = None) -> common.StationURL:
 	return common.StationURL(
-		"prudps", address=config.public_host, port=config.secure_port,
+		"prudps", address=host or config.public_host, port=config.secure_port,
 		CID=1, PID=SECURE_SERVER_PID, sid=1, stream=10, type=2
 	)
 

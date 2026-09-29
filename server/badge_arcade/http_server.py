@@ -242,7 +242,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 		now = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d%H%M%S")
 		if action == "LOGIN":
 			response = {
-				"locator": f"{self.config.public_host}:{self.config.auth_port}",
+				"locator": f"{self.config.address_for(ip)}:{self.config.auth_port}",
 				"retry": "0",
 				"returncd": "001",
 				"token": secrets.token_bytes(112),  # Same size as Pretendo's tokens
@@ -316,7 +316,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 		logger.info("NEX token for PID %i (game server %s)", pid, game_server_id)
 		self.send_body(200, (
 			'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-			f"<nex_token><host>{self.config.public_host}</host><nex_password>{password}</nex_password>"
+			f"<nex_token><host>{self.config.address_for(ip)}</host><nex_password>{password}</nex_password>"
 			f"<pid>{pid}</pid><port>{self.config.auth_port}</port><token>{token}</token></nex_token>"
 		).encode(), "application/xml;charset=UTF-8")
 
