@@ -235,10 +235,9 @@ A letter goes out two ways at once:
   while connected through the proxy. When it runs elsewhere it reaches Pretendo's server
   instead, which is how Pretendo's "Badge Arcade is Back!" letter arrived. That letter
   also showed the console accepts SpotPass files with blank signatures.
-  The proxy's policy list now gives the news task the EXPEDITE priority and Persistent
-  and Revive (as Pretendo's list does for its 3DS tasks), so it should run sooner: leave
-  the 3DS in sleep mode on the hotspot for a while and watch for `Sent SpotPass file
-  news`.
+  Giving the news task a higher priority in the proxy's policy list (EXPEDITE, plus
+  Persistent and Revive) didn't make it run, and the 3DS then never ran FGONLYT, so
+  Badge Arcade hung on "Downloading Data". The list keeps every task at HIGH.
 
 Steps:
 1. Back up first: in GodMode9, copy `1:/data/<id0>/sysdata/00010035/00000000` (the
