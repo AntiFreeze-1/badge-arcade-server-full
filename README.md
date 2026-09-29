@@ -69,8 +69,8 @@ done playing.
 | What | Where it goes | Needed for | How to get it |
 |---|---|---|---|
 | A 3DS with Luma3DS custom firmware and **Nintendo Badge Arcade 1.3.1** installed | – | Everything | Your own console and copy of the game. |
-| **SpotPass files** | `other/` | Machines and free plays | The archived Badge Arcade SpotPass data (archive.org's *Nintendo Badge Arcade Data* item), or your own dumps. See the file list below. |
-| `boot9.bin` from your console | `spotpass-letter/` | Switching weeks, custom weeks, free plays, letters | GodMode9: `[M:] MEMORY VIRTUAL` → `boot9.bin` → copy to `0:/gm9/out`. See [spotpass-letter/README.md](spotpass-letter/README.md#getting-the-key-from-your-own-console). |
+| SpotPass files | `other/` | Machines and free plays | The archived Badge Arcade SpotPass data (archive.org's *Nintendo Badge Arcade Data* item), or your own dumps. See the file list below. |
+| `boot9.bin` | `spotpass-letter/` | Switching weeks, custom weeks, free plays, letters | GodMode9: `[M:] MEMORY VIRTUAL` → `boot9.bin` → copy to `0:/gm9/out`. See [spotpass-letter/README.md](spotpass-letter/README.md#getting-the-key-from-your-own-console). |
 | The game's key (`badge_arcade_hmac.key`) | `spotpass-letter/` | Free plays | Dump the game's code with GodMode9 (title `0004000000153500` → *NCCH image options* → *Extract .code*), put `0004000000153500.dec.code` in `spotpass-letter/`, run `python find_sign_key.py 0004000000153500.dec.code`, and save the key it prints (32 hex digits) as `badge_arcade_hmac.key`. |
 | Your console's NEX password (`nex-keys.txt`) | `server/` | Usually nothing | Only if the server's log says *No NEX password known*: see [server/README.md](server/README.md#the-consoles-nex-password). |
 
