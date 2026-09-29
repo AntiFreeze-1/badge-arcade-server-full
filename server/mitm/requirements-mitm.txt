@@ -1,0 +1,9 @@
+# Installed into mitm/.venv by setup_mitm.py (kept separate from the server's
+# packages because mitmproxy pins its own dependency versions).
+#
+# The 3DS only speaks old TLS. cryptography 47+ bundles OpenSSL 4, which makes
+# mitmproxy 12 crash on startup once old TLS versions are enabled, so stay on
+# cryptography 46 (OpenSSL 3.5). service-identity 26 requires cryptography 47.
+mitmproxy==12.2.3
+cryptography==46.0.7
+service-identity<26

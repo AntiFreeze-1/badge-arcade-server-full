@@ -1,0 +1,6 @@
+boot9.bin
+boot9_prot.bin
+*.key
+out/
+*.code
+serve_state.json

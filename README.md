@@ -1,0 +1,164 @@
+# Nintendo Badge Arcade server
+
+A self-hosted server for **Nintendo Badge Arcade** on the 3DS, for personal use
+after Nintendo's shutdown. With it, the game connects again, saves your
+progress, loads weekly machines from archived SpotPass data, and can hand out
+free plays. A manager window takes care of setup and the day-to-day.
+
+> **No Nintendo files are included.** SpotPass data, console dumps, the game's
+> code and keys are copyrighted or console-specific, so you provide your own
+> (see [What you need to provide](#what-you-need-to-provide)). The
+> `.gitignore` keeps them out of the repository; please don't commit them.
+
+## Quick start (Windows)
+
+1. Install [Python 3.12 or newer](https://www.python.org/downloads/).
+2. Double-click **Setup.bat**. It installs the Python packages, creates
+   `server/config.json` and sets up the proxy (about 100 MB of downloads).
+3. Add the files from [What you need to provide](#what-you-need-to-provide).
+4. Copy the `luma` folder from `server/mitm/sd-card` to the root of the 3DS's
+   SD card, and make sure **Enable game patching** is on in Luma3DS's settings
+   (hold SELECT while powering on). This is Pretendo's NoSSL patch, which lets
+   the 3DS talk to the server.
+5. Double-click **Badge Arcade Manager.bat**. The **Setup** tab shows what's
+   still missing, and how to connect the 3DS.
+6. Connect the 3DS (below), then open Badge Arcade.
+
+On Linux or macOS, `python install.py` does step 2, and the server and proxy
+run from the command line (see [server/README.md](server/README.md)).
+
+## Connecting the 3DS
+
+Pick one in the manager's **Setup** tab.
+
+### Through the PC's hotspot (recommended)
+
+The 3DS joins a Wi-Fi hotspot run by the PC and needs **no proxy settings**.
+Press **Turn on hotspot**: Windows asks for admin rights once, the hotspot
+starts, and the server and proxy start with it. Then, on the 3DS:
+
+*System Settings → Internet Settings → Connection Settings → New Connection →
+Manual Setup → Search for an Access Point*, pick the network name shown in the
+manager, enter the password, and leave **Proxy Settings on No**. Run the
+connection test and open Badge Arcade.
+
+How it works: Windows' Mobile Hotspot gives its devices the PC as their DNS
+server, and answers from the PC's hosts file. Turning the hotspot on adds a
+marked block to the hosts file that points only the Nintendo servers Badge
+Arcade needs (login, account, SpotPass) at the PC, and adds firewall rules for
+the server's ports. Everything else the 3DS does goes straight to the internet,
+and anything that isn't Badge Arcade (the friends list, the eShop) is passed on
+to the real servers. **Turn off hotspot** removes the block again (closing the
+manager offers to do the same). The same thing works from the command line:
+`python server/mitm/hotspot.py on|off|status`.
+
+It needs a PC with Wi-Fi and an internet connection to share. The 3DS only
+sees 2.4 GHz networks: the manager sets the hotspot to 2.4 GHz where Windows
+allows it, and warns if it can't.
+
+### Through a proxy
+
+The 3DS stays on your usual Wi-Fi and uses the PC as its proxy. On the 3DS:
+*System Settings → Internet Settings → Connection Settings → your connection →
+Change Settings → Proxy Settings → Yes → Detailed Setup*, and enter the proxy
+server and port shown in the manager. Turn the proxy off on the 3DS when you're
+done playing.
+
+## What you need to provide
+
+| What | Where it goes | Needed for | How to get it |
+|---|---|---|---|
+| A 3DS with Luma3DS custom firmware and **Nintendo Badge Arcade 1.3.1** installed | – | Everything | Your own console and copy of the game. |
+| **SpotPass files** | `other/` | Machines and free plays | The archived Badge Arcade SpotPass data (archive.org's *Nintendo Badge Arcade Data* item), or your own dumps. See the file list below. |
+| `boot9.bin` from your console | `spotpass-letter/` | Switching weeks, custom weeks, free plays | GodMode9: `[M:] MEMORY VIRTUAL` → `boot9.bin` → copy to `0:/gm9/out`. See [spotpass-letter/README.md](spotpass-letter/README.md#getting-the-key-from-your-own-console). |
+| The game's key (`badge_arcade_hmac.key`) | `spotpass-letter/` | Free plays | Dump the game's code with GodMode9 (title `0004000000153500` → *NCCH image options* → *Extract .code*), put `0004000000153500.dec.code` in `spotpass-letter/`, run `python find_sign_key.py 0004000000153500.dec.code`, and save the key it prints (32 hex digits) as `badge_arcade_hmac.key`. |
+| Your console's NEX password (`nex-keys.txt`) | `server/` | Usually nothing | Only if the server's log says *No NEX password known*: see [server/README.md](server/README.md#the-consoles-nex-password). |
+
+The proxy's 3DS certificate and the NoSSL patch are downloaded from Pretendo
+Network by Setup.bat.
+
+### SpotPass files in `other/`
+
+The server sends whatever is in `other/` under the names the 3DS asks for.
+The tools expect these names (US region):
+
+| File | What it is |
+|---|---|
+| `data_v131-2022-12-29-09-40-NA.enc` | A weekly machine set (the Dec 29, 2022 week). The tools use it as the base for custom weeks. |
+| `playinfo_v131-2022-12-29-09-40-NA.enc` | The same week's play settings. The base for free plays. |
+| `allbadge_v131.dat.boss` | Every badge's graphics. The game needs it; custom weeks take machines from it. |
+| other `data_v131-*.enc` weeks | Optional: more weeks to switch between. |
+
+Once they're in place, serve a week and give free plays in the manager's
+**Machines** and **Free plays** tabs, or from the command line:
+
+```sh
+cd spotpass-letter
+python serve.py week dec29
+python serve.py free-plays --plays 2
+```
+
+This creates `data_v131.dat.boss` and `playinfo_v131.dat.boss`, which the
+server sends. The archived weeks are from 2022–2023, so serving a week moves its
+schedule to the current date (or to a fixed `"game_date"` in
+`server/config.json`, if you set one). The manager keeps the served week on the
+current date as days pass.
+
+## The manager
+
+| Tab | What it does |
+|---|---|
+| **Setup** | The checklist of what's installed and provided, and connecting the 3DS (hotspot or proxy). |
+| **Server** | Start and stop the server and proxy, set the game date, see what the 3DS gets next, and watch logins, SpotPass downloads and saves as they happen. |
+| **Machines** | Every archived Nintendo week and your custom weeks; pick one and press *Serve*. |
+| **Build a week** | Pick machine setups from every archived week (by series or one by one, with their badges listed) and build your own week. |
+| **Free plays** | Give free plays for the game date, and see which daily campaigns your save has collected. |
+| **Saves** | List, back up and reset saves. |
+
+After serving a week or giving free plays, fully close and reopen Badge Arcade.
+
+## What's here
+
+| Folder / file | What it is |
+|---|---|
+| `Setup.bat`, `install.py` | One-time setup, and the checklist the manager shows. |
+| `Badge Arcade Manager.bat`, `manager.py` | The manager window. |
+| [`server/`](server/README.md) | The server: NEX authentication and secure servers, save storage, SpotPass file hosting, and the proxy and hotspot (`server/mitm/`). |
+| [`spotpass-letter/`](spotpass-letter/README.md) | SpotPass tools used by the manager: switch weeks (`serve.py`), build custom weeks (`custom_week.py`), free plays (`free_plays.py`), find the game's signing key (`find_sign_key.py`), and an experimental SpotPass letter builder. |
+
+## Troubleshooting
+
+- **The 3DS doesn't see the hotspot.** The 3DS only has 2.4 GHz Wi-Fi. If the
+  PC shares a Wi-Fi connection, the hotspot runs on the same band as that
+  connection; connect the PC to a 2.4 GHz network or by cable.
+- **The connection test fails on the hotspot.** Check the Setup tab for a
+  DNS warning, and that the NoSSL patch is on the SD card with game patching
+  turned on in Luma. Security software that locks the hosts file can also
+  stop hotspot mode from working; use the proxy instead.
+- **The hosts file still has the Badge Arcade block** (for example after the
+  PC restarted with the hotspot on). The manager offers to remove it when it
+  starts, or run `python server/mitm/hotspot.py off`.
+- **"This service is not available in your region"** straight away: see
+  *Region-changed consoles* in [server/README.md](server/README.md#each-session).
+- **Proxy mode stopped working after a restart.** The PC's IP address can
+  change; the Setup tab shows the current one to enter on the 3DS.
+
+## Legal
+
+This project isn't affiliated with or endorsed by Nintendo. It contains no
+Nintendo code or assets, and it is meant for preserving your own copy of the
+game on your own console. Purchases are not possible: Nintendo closed the 3DS
+eShop in 2023, and this project doesn't bypass that.
+
+## Credits
+
+Special thanks to:
+- The [Pretendo Network](https://github.com/PretendoNetwork) team and the developers of all of the reverse-engineering tools. The server's protocol behaviour is ported from Pretendo's [badge-arcade-authentication](https://github.com/PretendoNetwork/badge-arcade-authentication) and [badge-arcade-secure](https://github.com/PretendoNetwork/badge-arcade-secure) servers, and the proxy uses their [mitmproxy-nintendo](https://github.com/PretendoNetwork/mitmproxy-nintendo) setup.
+- The documentation of the NEX protocol made by [kinnay](https://github.com/kinnay/NintendoClients/wiki), whose NintendoClients library the server uses.
+- [3dbrew](https://www.3dbrew.org/wiki/Nintendo_Badge_Arcade) contributors, for the SpotPass and Badge Arcade documentation.
+- The people who archived Badge Arcade's SpotPass data before the shutdown.
+
+The original codebase of this project is based on Pretendo Network's
+[BOSS](https://github.com/PretendoNetwork/BOSS) servers.
+
+Licensed under the GNU AGPL v3 (see [LICENSE](LICENSE)).

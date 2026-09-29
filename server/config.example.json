@@ -1,0 +1,27 @@
+{
+	"public_host": "auto",
+	"bind_host": "0.0.0.0",
+
+	"auth_port": 59400,
+	"secure_port": 59401,
+	"http_port": 8080,
+
+	"kerberos_password": "replace-with-a-random-string",
+
+	"data_dir": "data",
+	"boss_dir": "../other",
+
+	"nex_keys_file": "nex-keys.txt",
+	"accounts": {},
+	"default_nex_password": null,
+
+	"game_date": null,
+
+	"maintenance": {
+		"status": 65535,
+		"time": 0,
+		"is_success": true
+	},
+
+	"nex_settings": {}
+}

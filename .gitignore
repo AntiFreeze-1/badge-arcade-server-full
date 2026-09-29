@@ -1,0 +1,45 @@
+# Nothing from Nintendo goes in this repository: SpotPass files, console dumps,
+# game code and keys are provided by each user (see README.md).
+
+# SpotPass files (archived or dumped) and anything built from them
+/other/
+/spotpass-letter/out/
+*.boss
+*.enc
+
+# Console dumps and keys
+boot9*.bin
+*.code
+*.key
+/extdata-backup/
+
+# Local reference copies (3dbrew pages, emulator sources, archived letters)
+/spotpass-letter/ref/
+
+# Per-install state and private settings
+/manager_settings.json
+/spotpass-letter/serve_state.json
+/server/config.json
+/server/nex-keys.txt
+/server/data/
+/server/backups/
+/server/logs/
+
+# Proxy: virtual environment and files downloaded by setup_mitm.py (Pretendo's
+# mitmproxy-nintendo, including its 3DS client certificate, and the SSL patch),
+# plus traffic dumps, which contain console identifiers
+/server/mitm/.venv/
+/server/mitm/.mitmproxy/
+/server/mitm/mitmproxy-nintendo/
+/server/mitm/sd-card/
+/server/mitm/dumps/
+
+# Python / editors / OS
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
