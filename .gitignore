@@ -23,6 +23,7 @@ boot9*.bin
 /spotpass-letter/serve_state.json
 /server/config.json
 /server/nex-keys.txt
+/server/maintenance.json
 /server/data/
 /server/backups/
 /server/logs/

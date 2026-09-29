@@ -115,6 +115,7 @@ current date as days pass.
 | **Free plays** | Give free plays for the game date, and see which daily campaigns your save has collected. |
 | **Letters** | Write letters for the 3DS's Notifications applet, with a picture, and send them through SpotPass (experimental: see [spotpass-letter/README.md](spotpass-letter/README.md)). |
 | **Saves** | List, back up and reset saves. |
+| **Maintenance** | Put the server into maintenance, now or for a scheduled window: the 3DS can't log in and shows the system's maintenance error. No restart needed. |
 
 After serving a week or giving free plays, fully close and reopen Badge Arcade.
 

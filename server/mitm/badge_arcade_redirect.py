@@ -56,21 +56,32 @@ def policy_list() -> str:
 	Arcade's included, and the game then hangs on "Downloading Data".
 	Pretendo's BOSS server serves a list without it; this does the same,
 	with a higher ListId than Nintendo's final one (1931).
+
+	The news task (letters for the Notifications applet) only runs in the
+	background, on the console's own schedule. It gets EXPEDITE, the
+	priority above HIGH (3dbrew's BOSS priority levels), and Persistent and
+	Revive like the tasks in Pretendo's 3DS list, so a news task that was
+	stopped (by Nintendo's DefaultStop list, say) runs again, and soon.
 	"""
-	priorities = "".join(
-		"<Priority>"
-		f"<TitleId>{title_id.lower()}</TitleId><TaskId>{task}</TaskId><Level>HIGH</Level>"
-		"<Persistent>false</Persistent><Revive>false</Revive>"
-		"<SetApInfo><Ap>false</Ap><ApGroup>false</ApGroup><ApArea>false</ApArea></SetApInfo>"
-		"</Priority>"
-		for title_id, task in BADGE_ARCADE_TASKS
-	)
+	def priority(title_id: str, task: str) -> str:
+		news = task == "news"
+		flag = "true" if news else "false"
+		return (
+			"<Priority>"
+			f"<TitleId>{title_id.lower()}</TitleId><TaskId>{task}</TaskId>"
+			f"<Level>{'EXPEDITE' if news else 'HIGH'}</Level>"
+			f"<Persistent>{flag}</Persistent><Revive>{flag}</Revive>"
+			"<SetApInfo><Ap>false</Ap><ApGroup>false</ApGroup><ApArea>false</ApArea></SetApInfo>"
+			"</Priority>"
+		)
+
+	priorities = "".join(priority(title_id, task) for title_id, task in BADGE_ARCADE_TASKS)
 	# A fixed date in the past: a list dated "in the future" (e.g. when the
 	# console clock is set back to play an old SpotPass week) can be discarded
 	update_time = "2017-11-08T00:00:00+0000"
 	return (
 		"<PolicyList><MajorVersion>3</MajorVersion><MinorVersion>0</MinorVersion>"
-		f"<ListId>1932</ListId><DefaultStop>false</DefaultStop><ForceVersionUp>false</ForceVersionUp>"
+		f"<ListId>1933</ListId><DefaultStop>false</DefaultStop><ForceVersionUp>false</ForceVersionUp>"
 		f"<UpdateTime>{update_time}</UpdateTime>{priorities}</PolicyList>"
 	)
 

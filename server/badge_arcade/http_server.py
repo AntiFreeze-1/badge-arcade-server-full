@@ -384,7 +384,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 			return
 
 		if self.send_file(file, head):
-			logger.info("Sent SpotPass file %s (%s)", file.name, region)
+			logger.info("Sent SpotPass file %s (%s, %i bytes)", file.name, region, file.stat().st_size)
 		else:
 			logger.info("SpotPass file %s (%s) is already up to date on the console", file.name, region)
 

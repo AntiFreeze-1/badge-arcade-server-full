@@ -3,6 +3,7 @@
 from nintendo.nex import common, rmc, secure
 
 from ..config import Config
+from ..maintenance import MaintenanceFile
 
 import itertools
 import logging
@@ -15,6 +16,7 @@ class SecureConnectionServer(secure.SecureConnectionServer):
 	def __init__(self, config: Config):
 		super().__init__()
 		self.config = config
+		self.maintenance = MaintenanceFile(config.maintenance_path)
 		self.methods[self.METHOD_GET_MAINTENANCE_STATUS] = self.handle_get_maintenance_status
 		self._connection_ids = itertools.count(1)
 		self._stations: dict[int, list[common.StationURL]] = {}
@@ -78,7 +80,8 @@ class SecureConnectionServer(secure.SecureConnectionServer):
 
 	async def handle_get_maintenance_status(self, client, input, output):
 		logger.info("SecureConnection.get_maintenance_status()")
-		maintenance = self.config.maintenance
-		output.u16(maintenance.status)
-		output.u32(maintenance.time)
-		output.bool(maintenance.is_success)
+		defaults = self.config.maintenance
+		state = self.maintenance.current()  # the Maintenance tab's overrides, if any
+		output.u16(defaults.status if state.status is None else state.status)
+		output.u32(defaults.time if state.time is None else state.time)
+		output.bool(defaults.is_success if state.is_success is None else state.is_success)

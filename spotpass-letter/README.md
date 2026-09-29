@@ -235,6 +235,10 @@ A letter goes out two ways at once:
   while connected through the proxy. When it runs elsewhere it reaches Pretendo's server
   instead, which is how Pretendo's "Badge Arcade is Back!" letter arrived. That letter
   also showed the console accepts SpotPass files with blank signatures.
+  The proxy's policy list now gives the news task the EXPEDITE priority and Persistent
+  and Revive (as Pretendo's list does for its 3DS tasks), so it should run sooner: leave
+  the 3DS in sleep mode on the hotspot for a while and watch for `Sent SpotPass file
+  news`.
 
 Steps:
 1. Back up first: in GodMode9, copy `1:/data/<id0>/sysdata/00010035/00000000` (the
@@ -242,8 +246,9 @@ Steps:
 2. Send it from the Letters tab (or `python serve.py letter`). The proxy picks up the
    new file list within 60 s. Nothing needs restarting.
 3. With the server and proxy running, open Badge Arcade and let it finish "Downloading
-   Data". server.log shows `Sent SpotPass file playinfo_v131.dat.boss`, and the Letters
-   tab marks the letter as downloaded. Close the game and open Notifications.
+   Data". server.log shows `Sent SpotPass file playinfo_v131.dat.boss (USA, N bytes)`;
+   with a letter inside, N is the letter's size (picture included) bigger than without.
+   The Letters tab marks the letter as downloaded. Close the game and open Notifications.
 4. If Badge Arcade can't download its data after a letter was sent, press **Take letter
    down**: playinfo goes back to the game's payload alone. If it's downloaded but no
    letter appears, the payload layout or datatype is the suspect (`make_letter.py

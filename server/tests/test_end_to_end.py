@@ -157,7 +157,8 @@ async def download(info) -> bytes:
 	return data
 
 
-async def run_flow(config: Config, prudp_version: int, pid: int, password: str, auth_info=None) -> None:
+async def run_flow(config: Config, prudp_version: int, pid: int, password: str, auth_info=None,
+		status: tuple[int, int, bool] = (0xFFFF, 0, True)) -> None:
 	s = client_settings(prudp_version)
 
 	async with backend.connect(s, "127.0.0.1", config.auth_port) as be:
@@ -174,7 +175,7 @@ async def run_flow(config: Config, prudp_version: int, pid: int, password: str, 
 
 			body = await client.request(11, 9, b"")
 			stream = streams.StreamIn(body, s)
-			assert (stream.u16(), stream.u32(), stream.bool()) == (0xFFFF, 0, True)
+			assert (stream.u16(), stream.u32(), stream.bool()) == status
 
 			ds = datastore.DataStoreClient(client)
 
