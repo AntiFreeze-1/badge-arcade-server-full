@@ -2,6 +2,7 @@
 
   python install.py            install the packages, create server/config.json, set up the proxy
   python install.py --check    only list what's done and what's still missing
+  python install.py --packages only (re)install the Python packages (update.py runs this)
 
 Safe to run again: it keeps an existing config.json and skips finished steps.
 The manager window's Setup tab uses checklist() and the steps below.
@@ -54,7 +55,7 @@ def install_packages() -> None:
 	if sys.platform == "win32":
 		# netifaces (an anynet dependency) needs a C compiler on Windows and the
 		# server doesn't use it, so install around it
-		subprocess.check_call(pip + ["pycryptodome", "anyio~=4.0", "pyopenssl", "multidict", "netifaces-plus", "pytest"])
+		subprocess.check_call(pip + ["pycryptodome>=3.20,<4", "anyio~=4.0", "pyopenssl>=24.0", "multidict>=6.0", "netifaces-plus"])
 		subprocess.check_call(pip + ["--no-deps", "anynet~=1.2", "nintendoclients==5.0.0"])
 	else:
 		subprocess.check_call(pip + ["-r", str(SERVER_DIR / "requirements.txt")])
@@ -123,6 +124,7 @@ def checklist() -> list[Check]:
 def main() -> int:
 	parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 	parser.add_argument("--check", action="store_true", help="only show what's missing")
+	parser.add_argument("--packages", action="store_true", help="only (re)install the Python packages")
 	args = parser.parse_args()
 
 	if sys.version_info < (3, 12):
@@ -130,6 +132,10 @@ def main() -> int:
 		return 1
 
 	if not args.check:
+		if args.packages:
+			print("Installing the server's Python packages...")
+			install_packages()
+			return 0
 		if not packages_installed():
 			print("Installing the server's Python packages...")
 			install_packages()

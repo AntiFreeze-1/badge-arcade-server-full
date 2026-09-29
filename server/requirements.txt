@@ -1,10 +1,9 @@
 # On Linux/macOS `pip install -r requirements.txt` works as-is.
 # On Windows, netifaces (a dependency of anynet) needs a C compiler; see the
-# README for installing without it.
+# README for installing without it. install.py installs the same versions.
 nintendoclients==5.0.0
 anynet~=1.2
 anyio~=4.0
-pycryptodome
-pyopenssl
-multidict
-pytest
+pycryptodome>=3.20,<4
+pyopenssl>=24.0
+multidict>=6.0

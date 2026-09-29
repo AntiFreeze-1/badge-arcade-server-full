@@ -356,7 +356,7 @@ def main() -> int:
 	print(f"Password:    {info['passphrase']}")
 	print(f"Clients:     {info['clients']}")
 	print(f"Address:     {info['ip']}")
-	print(f"Hosts file:  " + (f"Nintendo hosts point at {info['hosts_ip']}" if info["hosts_ip"] else "no entries"))
+	print("Hosts file:  " + (f"Nintendo hosts point at {info['hosts_ip']}" if info["hosts_ip"] else "no entries"))
 	if info["state"] == "On" and info["hosts_ip"]:
 		print(f"DNS check:   {info['dns_problem'] or 'OK, the 3DS will reach this PC'}")
 	if info["warning"]:

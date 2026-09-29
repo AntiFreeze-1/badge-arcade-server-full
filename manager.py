@@ -18,7 +18,9 @@ import socket
 import subprocess
 import sys
 import threading
+import time
 import tkinter as tk
+import webbrowser
 from tkinter import messagebox, ttk
 
 ROOT = Path(__file__).resolve().parent
@@ -32,6 +34,7 @@ sys.path[:0] = [str(LETTER_DIR), str(SERVER_DIR), str(SERVER_DIR / "mitm")]
 import hotspot  # noqa: E402
 import install  # noqa: E402
 import serve  # noqa: E402
+import update  # noqa: E402
 from custom_week import Builder, daily_lineup, series as series_of  # noqa: E402
 from badge_arcade import admin  # noqa: E402
 from badge_arcade.config import lan_address, load_config  # noqa: E402
@@ -52,6 +55,8 @@ SERIES_NAMES = {
 	"ZelHero": "Zelda: heroes", "ZelTPri": "Zelda: Twilight Princess", "ZelTri": "Zelda: Tri Force Heroes",
 	"ZelWndHD": "Zelda: Wind Waker HD", "Zelda30th": "Zelda 30th Anniversary",
 }
+
+UPDATE_CHECK_INTERVAL = 86400  # seconds between automatic update checks
 
 SERVER_EVENTS = re.compile(r"Ready|Login from|SpotPass|ChangeMeta|meta changes|Sent data ID|disconnected|ERROR|Traceback|Error")
 # "does not trust": the 3DS rejected the proxy's certificate, i.e. the NoSSL patch isn't active
@@ -137,7 +142,7 @@ class Service:
 class Manager(tk.Tk):
 	def __init__(self):
 		super().__init__()
-		self.title("Badge Arcade Manager")
+		self.title(f"Badge Arcade Manager {update.current_version()}")
 		self.geometry("1000x780")
 		self.minsize(860, 560)
 		try:
@@ -182,6 +187,7 @@ class Manager(tk.Tk):
 		self.refresh_status()
 		self.after(1000, self.poll_logs)
 		self.after(500, self.check_leftover_hosts)
+		self.after(2000, self.check_for_update)
 
 	# --- helpers ---
 
@@ -229,8 +235,17 @@ class Manager(tk.Tk):
 	# --- Setup tab ---
 
 	def build_setup_tab(self, tab: ttk.Frame) -> None:
+		self.update_banner = ttk.Frame(tab, padding=(0, 0, 0, 8))
+		self.update_text = ttk.Label(self.update_banner, style="Big.TLabel")
+		self.update_text.pack(side="left")
+		ttk.Button(self.update_banner, text="Update now", command=lambda: self.install_update(ask=True)).pack(side="left", padx=6)
+		ttk.Button(self.update_banner, text="What's new", command=lambda: webbrowser.open(
+			(self.settings.get("update_release") or {}).get("page_url") or f"https://github.com/{update.REPOSITORY}/releases")
+		).pack(side="left")
+
 		checks = ttk.LabelFrame(tab, text="Checklist", padding=10)
 		checks.pack(fill="x")
+		self.checks_frame = checks
 		self.checklist_frame = ttk.Frame(checks)
 		self.checklist_frame.pack(fill="x")
 		buttons = ttk.Frame(checks)
@@ -238,6 +253,13 @@ class Manager(tk.Tk):
 		ttk.Button(buttons, text="Refresh", command=self.refresh_checklist).pack(side="left")
 		ttk.Button(buttons, text="Open project folder", command=lambda: os.startfile(ROOT)).pack(side="left", padx=6)
 		ttk.Label(buttons, text="README.md explains where each file comes from.", style="Hint.TLabel").pack(side="left", padx=6)
+		versions = ttk.Frame(checks)
+		versions.pack(anchor="w", pady=(6, 0))
+		ttk.Label(versions, text=f"Version {update.current_version()}").pack(side="left")
+		ttk.Button(versions, text="Check for updates", command=lambda: self.check_for_update(manual=True)).pack(side="left", padx=6)
+		self.auto_update = tk.BooleanVar(value=bool(self.settings.get("auto_update")))
+		ttk.Checkbutton(versions, text="Install updates automatically when the manager opens", variable=self.auto_update,
+			command=self.change_auto_update).pack(side="left", padx=6)
 
 		connect = ttk.LabelFrame(tab, text="Connect the 3DS", padding=10)
 		connect.pack(fill="both", expand=True, pady=(8, 0))
@@ -293,6 +315,79 @@ class Manager(tk.Tk):
 
 		self.show_connection_panel()
 		self.refresh_checklist()
+
+	# --- updates ---
+
+	def check_for_update(self, manual: bool = False) -> None:
+		"""Looks for a new release (at most once a day unless asked), then offers or installs it."""
+		known = self.settings.get("update_release")
+		if known and not update.is_newer(known["version"], update.current_version()):
+			known = self.settings["update_release"] = None  # installed since
+			save_settings(self.settings)
+		if not manual and time.time() - self.settings.get("update_checked", 0) < UPDATE_CHECK_INTERVAL:
+			self.show_update(known, install=True)
+			return
+
+		def work():
+			try:
+				return update.check()
+			except update.UpdateError as e:
+				if manual:
+					raise RuntimeError(f"Couldn't check for updates: {e}.") from e
+				return known  # offline: keep what the last check found
+
+		def done(release):
+			self.settings["update_checked"] = time.time()
+			self.settings["update_release"] = release
+			save_settings(self.settings)
+			self.show_update(release, install=not manual)
+			if release is None and manual:
+				self.status.set(f"Version {update.current_version()} is the newest version.")
+
+		self.background("Checking for updates...", work, done)
+
+	def show_update(self, release: dict | None, install: bool) -> None:
+		"""Shows the update banner; install: install it now if updates are set to install automatically."""
+		if release is None:
+			self.update_banner.pack_forget()
+			return
+		self.update_text.config(text=f"Version {release['version']} is available (you have {update.current_version()}).")
+		self.update_banner.pack(fill="x", before=self.checks_frame)
+		if install and self.settings.get("auto_update"):
+			self.install_update(ask=False)
+
+	def change_auto_update(self) -> None:
+		self.settings["auto_update"] = self.auto_update.get()
+		save_settings(self.settings)
+
+	def install_update(self, ask: bool) -> None:
+		release = self.settings.get("update_release")
+		if not release:
+			return
+		ours = [s for s in (self.server, self.proxy) if s.pid() and s.listening()]
+		if ask and not messagebox.askyesno("Badge Arcade Manager", f"Install version {release['version']}?\n\n"
+				+ ("The server and proxy will be stopped. " if ours else "")
+				+ "Your settings, saves, SpotPass files and keys are kept, and the replaced files are backed up. "
+				"The manager closes afterwards; open it again to use the new version."):
+			return
+
+		def work():
+			for service in ours:
+				service.stop()
+			for _ in range(50):  # give them a moment to let go of their ports
+				if not update.running_services():
+					break
+				time.sleep(0.1)
+			return update.apply(release)
+
+		def done(summary):
+			self.settings["update_release"] = None
+			save_settings(self.settings)
+			messagebox.showinfo("Badge Arcade Manager", f"{summary}\n\nThe manager will close now. Open it again "
+				"to use the new version.")
+			self.destroy()
+
+		self.background(f"Installing version {release['version']}...", work, done)
 
 	def refresh_checklist(self) -> None:
 		for widget in self.checklist_frame.winfo_children():

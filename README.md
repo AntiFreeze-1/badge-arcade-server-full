@@ -108,7 +108,7 @@ current date as days pass.
 
 | Tab | What it does |
 |---|---|
-| **Setup** | The checklist of what's installed and provided, and connecting the 3DS (hotspot or proxy). |
+| **Setup** | The checklist of what's installed and provided, connecting the 3DS (hotspot or proxy), and updates. |
 | **Server** | Start and stop the server and proxy, set the game date, see what the 3DS gets next, and watch logins, SpotPass downloads and saves as they happen. |
 | **Machines** | Every archived Nintendo week and your custom weeks; pick one and press *Serve*. |
 | **Build a week** | Pick machine setups from every archived week (by series or one by one, with their badges listed) and build your own week. |
@@ -117,12 +117,42 @@ current date as days pass.
 
 After serving a week or giving free plays, fully close and reopen Badge Arcade.
 
+## Updating
+
+The installed version is in the `VERSION` file and the manager's title bar.
+The manager checks for a new version once a day and shows **Update now** on
+the Setup tab when there is one. Tick *Install updates automatically* to have
+it install updates as it opens.
+
+Updates come from this project's [GitHub releases](https://github.com/AntiFreeze-1/badge-arcade-server-full/releases).
+They replace the project's own files and never touch yours: `server/config.json`,
+saves, SpotPass files, keys and dumps, and the manager's settings are kept. The
+files an update replaces are zipped into `backups/` first. If the folder is a
+git checkout, it is updated with `git pull` instead.
+
+From the command line, or for updating on a schedule:
+
+```sh
+python update.py --check        # exit code 0: up to date, 10: update available, 1: couldn't check
+python update.py --apply --yes  # install the newest release without asking
+```
+
+Stop the server and proxy first: `update.py` refuses to update while they're
+running. To update unattended, schedule `python update.py --apply --yes` in the
+project folder for a time the server isn't running (Windows Task Scheduler, or
+cron on Linux/macOS: `0 4 * * * cd /path/to/badge-arcade-server-full && python3 update.py --apply --yes`).
+
+To publish a new version: bump `VERSION`, commit, and push a matching tag
+(`git tag v1.1.0 && git push origin v1.1.0`). The Release workflow runs the
+tests and publishes the release that installs pick up.
+
 ## What's here
 
 | Folder / file | What it is |
 |---|---|
 | `Setup.bat`, `install.py` | One-time setup, and the checklist the manager shows. |
 | `Badge Arcade Manager.bat`, `manager.py` | The manager window. |
+| `update.py`, `VERSION` | Checks for and installs new versions. |
 | [`server/`](server/README.md) | The server: NEX authentication and secure servers, save storage, SpotPass file hosting, and the proxy and hotspot (`server/mitm/`). |
 | [`spotpass-letter/`](spotpass-letter/README.md) | SpotPass tools used by the manager: switch weeks (`serve.py`), build custom weeks (`custom_week.py`), free plays (`free_plays.py`), find the game's signing key (`find_sign_key.py`), and an experimental SpotPass letter builder. |
 
