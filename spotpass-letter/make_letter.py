@@ -426,15 +426,17 @@ def describe_news_payload(payload: bytes) -> str:
 # ---------------------------------------------------------------------------
 
 def build_container_plain(payload: bytes, program_id: int, datatype: int, ns_data_id: int,
-                          version: int, mark_arrived_always: bool = True) -> bytes:
+                          version: int, mark_arrived_always: bool = False) -> bytes:
 	"""Content header + payload header + payload, i.e. everything after the
 	0x28-byte BOSS header, before encryption."""
 	return build_container_plain_multi([(payload, program_id, datatype, ns_data_id, version)], mark_arrived_always)
 
 
-def build_container_plain_multi(payloads: list[tuple[bytes, int, int, int, int]], mark_arrived_always: bool = True) -> bytes:
+def build_container_plain_multi(payloads: list[tuple[bytes, int, int, int, int]], mark_arrived_always: bool = False) -> bytes:
 	"""Like build_container_plain with several (payload, program ID, datatype, nsDataId,
 	version) payloads, each after its own header (Nintendo's letters had two)."""
+	# Content flags: Pretendo's boss-crypto sets 0x80 ("always mark arrived"); Nintendo's
+	# real Badge Arcade letter has 0
 	ch = bytearray(0x12)
 	if mark_arrived_always:
 		ch[0] |= 0x80
@@ -610,7 +612,7 @@ def cmd_selftest(args) -> int:
 	container = encrypt_container(fake_key, plain, 42)
 	assert container[BOSS_HEADER_SIZE:BOSS_HEADER_SIZE + 16] != plain[:16], "not encrypted"
 	info, payloads = parse_container(container, fake_key)
-	assert info["serial"] == 42 and info["payload_count"] == 1 and info["flags0"] == 0x80
+	assert info["serial"] == 42 and info["payload_count"] == 1 and info["flags0"] == 0x00
 	p = payloads[0]
 	assert (p.program_id, p.datatype, p.ns_data_id, p.version) == (NEWS_PROGRAM_ID, 0x20001, 0x12345678, 1)
 	assert p.content == payload
@@ -712,7 +714,7 @@ def comparison(real: bytes, key: bytes) -> list[tuple[str, str, str]]:
 	letter = Letter(title, message, url, news[NEWS_BODY_SIZE:] or None, source, ns, version,
 		None if jump == source else jump, news[6])
 	ours_news = build_news_payload(letter)
-	ours_plain = build_container_plain(ours_news, NEWS_PROGRAM_ID, 0x20001, ns, version)
+	ours_plain = build_container_plain(ours_news, NEWS_PROGRAM_ID, 0x20001, real_payload.ns_data_id, real_payload.version)
 	ours_info, ours_payloads = parse_container(encrypt_container(key, ours_plain, info["serial"]), key)
 	ours = ours_payloads[0]
 

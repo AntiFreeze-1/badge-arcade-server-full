@@ -167,3 +167,16 @@ def test_compare_with_two_payloads(capsys, tmp_path, monkeypatch):
 	out = capsys.readouterr().out
 	assert "also has a payload for 0004000000134600" in out and "game data" in out
 	assert (tmp_path / "x" / "real_0004000000134600_0.bin").read_bytes() == b"game data"
+
+
+def test_container_matches_nintendos_letter():
+	# Badge Arcade's real letter: content flags 0, datatype 0x20001, payload version 1,
+	# and the letter header's own version field 0
+	letter = make_letter.Letter("Hi", "There", ns_data_id=0x291E, version=0)
+	news = make_letter.build_news_payload(letter)
+	real = make_letter.encrypt_container(KEY, make_letter.build_container_plain(news, make_letter.NEWS_PROGRAM_ID, 0x20001, 0x291E, 1), 1)
+	info, _ = make_letter.parse_container(real, KEY)
+	assert info["flags0"] == 0x00
+	# compare rebuilds ours with the real payload's version, so nothing shows as different
+	rows = make_letter.comparison(real, KEY)
+	assert [name for name, theirs, ours in rows if ours and theirs != ours] == []
