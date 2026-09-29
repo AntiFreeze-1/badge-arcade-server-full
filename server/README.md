@@ -69,7 +69,7 @@ pip install --no-deps "anynet~=1.2" "nintendoclients==5.0.0"
 
 | Key | Meaning |
 |---|---|
-| `public_host` | The PC's LAN IP as seen from the 3DS. `auto` (the default) finds the current one each time the server starts; restart the server if the PC's IP changes |
+| `public_host` | The address the 3DS reaches this PC on. `auto` (the default) gives each 3DS the PC's address on its network when it logs in (the hotspot's address for a 3DS on the hotspot, the LAN address otherwise), so the hotspot can start after the server and the PC can change networks without a restart. An address here is always used as it is |
 | `kerberos_password` | Any random string; used internally between the auth and secure servers |
 | `boss_dir` | Folder with SpotPass files (defaults to `../other`) |
 | `nex_keys_file` | `nex-keys.txt` dumped from the console, next to the config by default (see below) |
@@ -125,8 +125,8 @@ python -m badge_arcade config.json        # add -v for packet-level logs
 python -m badge_arcade config.json --public-host 192.168.137.1   # hotspot mode
 ```
 
-`--public-host` overrides `public_host` for this run: it's the address the
-3DS is told to use, which in hotspot mode is the PC's hotspot address.
+`--public-host` sets the address for this run when the 3DS's own address isn't known
+(with `public_host` set to `auto`, each 3DS otherwise gets the address it can reach).
 
 On Windows, allow Python through the firewall for inbound **UDP 59400–59401**
 and **TCP 8080**, plus **TCP 8083** for the proxy (Windows usually asks the

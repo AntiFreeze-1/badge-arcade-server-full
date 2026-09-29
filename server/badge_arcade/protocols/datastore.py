@@ -412,7 +412,7 @@ class DataStoreServer(datastore.DataStoreServer):
 
 		info = datastore.DataStoreReqPostInfo()
 		info.data_id = data_id
-		info.url = f"{self.config.http_base_url}/"
+		info.url = f"{self.config.http_url_for(client.remote_address()[0])}/"
 		info.headers = []
 		info.form = self.upload_form(key, param.size)
 		info.root_ca_cert = b""
@@ -438,7 +438,7 @@ class DataStoreServer(datastore.DataStoreServer):
 
 		info = datastore.DataStoreReqUpdateInfo()
 		info.version = version
-		info.url = f"{self.config.http_base_url}/"
+		info.url = f"{self.config.http_url_for(client.remote_address()[0])}/"
 		info.headers = []
 		info.form = self.upload_form(key, param.size)
 		info.root_ca_cert = b""
@@ -470,7 +470,7 @@ class DataStoreServer(datastore.DataStoreServer):
 			raise common.RMCError("DataStore::NotFound")
 
 		info = datastore.DataStoreReqGetInfo()
-		info.url = f"{self.config.http_base_url}/{self.object_key(data_id, version)}"
+		info.url = f"{self.config.http_url_for(client.remote_address()[0])}/{self.object_key(data_id, version)}"
 		info.headers = []
 		info.size = path.stat().st_size
 		info.root_ca_cert = b""

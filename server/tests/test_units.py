@@ -93,3 +93,55 @@ def test_address_in_use_message():
 	assert address_in_use(BaseExceptionGroup("x", [ExceptionGroup("y", [in_use])]))
 	assert not address_in_use(OSError(errno.EACCES, "Permission denied"))
 	assert not address_in_use(ExceptionGroup("x", [ValueError("no")]))
+
+
+def test_address_for(monkeypatch):
+	from badge_arcade import config as config_module
+	auto = Config(public_host="auto", base_dir=Path("."))
+	auto.public_host = "10.99.99.99"  # what --public-host sets: only a fallback now
+	assert auto.address_for("127.0.0.1") == "127.0.0.1"
+	assert auto.address_for(None) == "10.99.99.99"
+	assert auto.address_for("not an ip") == "10.99.99.99"
+	assert auto.address_for("::1") == "10.99.99.99"
+	monkeypatch.setattr(config_module, "local_address_toward", lambda ip: "192.168.137.1" if ip.startswith("192.168.137.") else None)
+	assert auto.address_for("192.168.137.122") == "192.168.137.1"  # a 3DS on the hotspot
+	assert auto.address_for("10.0.0.5") == "10.99.99.99"  # no route found
+
+	fixed = Config(public_host="10.1.2.3", base_dir=Path("."))
+	assert fixed.public_host_fixed and fixed.address_for("192.168.137.122") == "10.1.2.3"
+
+
+@pytest.fixture
+def auto_server(tmp_path: Path):
+	with socket.socket() as s:
+		s.bind(("127.0.0.1", 0))
+		port = s.getsockname()[1]
+	config = Config(public_host="auto", bind_host="127.0.0.1", http_port=port, boss_dir=None, base_dir=tmp_path)
+	config.public_host = "10.99.99.99"  # a stale address, like a server started before the hotspot
+	storage = Storage(config.data_path)
+	server = http_server.start_http_server(config, storage)
+	yield config, port
+	server.shutdown()
+	server.server_close()
+	storage.close()
+
+
+def post_form(port: int, path: str, body: bytes) -> bytes:
+	connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+	try:
+		connection.request("POST", path, body, {"Content-Type": "application/x-www-form-urlencoded"})
+		return connection.getresponse().read()
+	finally:
+		connection.close()
+
+
+def test_logins_get_the_address_the_3ds_can_reach(auto_server):
+	config, port = auto_server
+	# NASC login (behind the proxy the console's address comes in X-Forwarded-For; here it's 127.0.0.1)
+	form = "&".join(f"{k}={http_server.nasc_encode(v)}" for k, v in {"action": "LOGIN", "gameid": "00134600"}.items())
+	reply = dict(pair.split("=", 1) for pair in post_form(port, "/ac", form.encode()).decode().split("&"))
+	assert http_server.nasc_decode(reply["locator"]).decode() == f"127.0.0.1:{config.auth_port}"
+
+	# NEX token (the proxy passes the console's address as ip)
+	body = post_form(port, "/nex_token", b"game_server_id=00134600&pid=1750000001&ip=127.0.0.1").decode()
+	assert "<host>127.0.0.1</host>" in body

@@ -86,6 +86,7 @@ class Service:
 		self.port = port
 		self.log = LOG_DIR / f"{name}.log"
 		self.process: subprocess.Popen | None = None
+		self.started_at = 0.0  # when this window started it (0: earlier, or elsewhere)
 
 	def pid(self) -> int | None:
 		if self.process and self.process.poll() is None:
@@ -121,6 +122,7 @@ class Service:
 		python = Path(sys.executable)
 		if python.stem.lower() == "pythonw" and python.with_name("python.exe").exists():
 			python = python.with_name("python.exe")
+		self.started_at = time.time()
 		self.process = subprocess.Popen(
 			[str(python), *self.args()], cwd=SERVER_DIR, stdout=log, stderr=subprocess.STDOUT,
 			stdin=subprocess.DEVNULL, env=env, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
@@ -160,6 +162,8 @@ class Manager(tk.Tk):
 			+ (["--hotspot", self.live_hotspot_ip()] if self.live_hotspot_ip() else []), 8083)
 		self.hotspot_info: dict = {}
 		self.hotspot_busy = False
+		self.proxy_restarting = False
+		self.proxy_healed: tuple[str, float] | None = None  # (hotspot IP, proxy start) of the last automatic restart
 		self.builder: Builder | None = None
 		self.weeks: list[serve.Week] = []
 		self.log_offsets: dict[Path, int] = {}
@@ -590,6 +594,7 @@ class Manager(tk.Tk):
 			self.service_labels[service.name].configure(text=text)
 
 		hotspot_mode = self.settings["connection"] == "hotspot"
+		self.check_proxy_hotspot()
 		self.mode_label.configure(text="The 3DS connects through this PC's hotspot (see the Setup tab)." if hotspot_mode
 			else "The 3DS connects through the proxy on your Wi-Fi (see the Setup tab).")
 
@@ -598,14 +603,56 @@ class Manager(tk.Tk):
 		self.ip_label.configure(text=ip)
 		serving = self.server_ip() if self.server.listening() else None
 		expected = self.live_hotspot_ip() or ip
+		warning = ""
 		if serving and serving != expected:
-			warning = (f"The server gives the 3DS {serving}, but it should be {expected} now. Restarting the server is reccomended"
-				+ ("." if hotspot_mode else f", and change the proxy server on the 3DS to {ip}."))
-			self.ip_warning.configure(text=warning)
+			if public_host_fixed():
+				warning = (f"The server gives the 3DS {serving}, but it should be {expected} now. Restarting the server is reccomended"
+					+ ("." if hotspot_mode else f", and change the proxy server on the 3DS to {ip}."))
+			elif not hotspot_mode:
+				# The server gives each 3DS the address it can reach; only the 3DS's proxy setting is out of date
+				warning = f"This PC's address is now {ip}: change the proxy server on the 3DS to {ip}."
+		self.ip_warning.configure(text=warning)
+		if warning:
 			self.status.set(warning)
-		else:
-			self.ip_warning.configure(text="")
 		self.after(3000, self.refresh_services)
+
+	def check_proxy_hotspot(self) -> None:
+		"""A proxy started before the hotspot came on only listens for 3DSs with a proxy set, so
+		3DSs on the hotspot (no proxy) get no answer on port 443 and Badge Arcade's NNID login
+		stalls. Restart such a proxy (started here) so it answers on the hotspot too."""
+		ip = self.live_hotspot_ip()
+		if (not ip or self.proxy_restarting or not self.proxy.pid() or not self.proxy.listening()
+				or time.time() - self.proxy.started_at < 20 or port_open(ip, 443)):
+			return
+		if self.proxy_healed == (ip, self.proxy.started_at):
+			# Restarted once already and still nothing on 443: don't keep restarting
+			self.status.set(f"The proxy isn't answering on the hotspot ({ip}, port 443), so 3DSs on the hotspot "
+				"can't log in. Another program may be using port 443; see server/logs/proxy.log.")
+			return
+		self.proxy_restarting = True
+		self.status.set("The proxy started before the hotspot, so 3DSs on the hotspot can't log in. Restarting it...")
+
+		def work():
+			self.proxy.stop()
+			for _ in range(30):
+				if not self.proxy.listening():
+					break
+				threading.Event().wait(0.2)
+			self.proxy.start()
+			self.log_offsets[self.proxy.log] = self.proxy.log.stat().st_size if self.proxy.log.exists() else 0
+
+		def done(_=None):
+			self.proxy_restarting = False
+			self.proxy_healed = (ip, self.proxy.started_at)
+			self.status.set("Restarted the proxy for the hotspot.")
+
+		def run():
+			try:
+				work()
+			finally:
+				self.after(0, done)
+
+		threading.Thread(target=run, daemon=True).start()
 
 	def server_ip(self) -> str | None:
 		"""The IP the running server gives the 3DS, from its start-up line (servers started here only)."""
@@ -1389,6 +1436,23 @@ class Manager(tk.Tk):
 					self.background("Turning the hotspot off...", hotspot.turn_off, lambda _: self.destroy())
 					return
 		self.destroy()
+
+
+def public_host_fixed() -> bool:
+	"""Whether server/config.json sets public_host to an address (instead of "auto", which
+	makes the server give each 3DS the address it can reach)."""
+	try:
+		value = json.loads((SERVER_DIR / "config.json").read_text(encoding="utf-8")).get("public_host", "auto")
+	except (OSError, ValueError):
+		return False
+	return value not in ("auto", "", None)
+
+
+def port_open(ip: str, port: int) -> bool:
+	"""Whether something accepts TCP connections on ip:port (this PC's own addresses)."""
+	with socket.socket() as s:
+		s.settimeout(0.3)
+		return s.connect_ex((ip, port)) == 0
 
 
 def hotspot_address() -> str | None:

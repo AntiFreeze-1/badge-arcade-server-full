@@ -61,9 +61,10 @@ class AuthenticationServer(authentication.AuthenticationServer):
 		logger.info("Login from PID %i (%s:%i), credentials from %s", pid, *client.remote_address(), source)
 		return user_key_from_secret(secret, pid)
 
-	def connection_data(self) -> authentication.RVConnectionData:
+	def connection_data(self, client: rmc.RMCClient | None = None) -> authentication.RVConnectionData:
 		data = authentication.RVConnectionData()
-		data.main_station = secure_station_url(self.config)
+		console_ip = client.remote_address()[0] if client is not None else None
+		data.main_station = secure_station_url(self.config, self.config.address_for(console_ip))
 		data.special_protocols = []
 		data.special_station = common.StationURL("")  # Empty string, like Pretendo's server
 		data.server_time = self.game_time()
@@ -93,7 +94,7 @@ class AuthenticationServer(authentication.AuthenticationServer):
 
 	def do_login(self, client: rmc.RMCClient, username: str) -> rmc.RMCResponse:
 		response = rmc.RMCResponse()
-		response.connection_data = self.connection_data()
+		response.connection_data = self.connection_data(client)
 
 		try:
 			pid = int(username.rstrip("\x00"))
