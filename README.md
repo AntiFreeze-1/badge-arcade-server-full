@@ -157,6 +157,7 @@ Special thanks to:
 - The documentation of the NEX protocol made by [kinnay](https://github.com/kinnay/NintendoClients/wiki), whose NintendoClients library the server uses.
 - [3dbrew](https://www.3dbrew.org/wiki/Nintendo_Badge_Arcade) contributors, for the SpotPass and Badge Arcade documentation.
 - The people who archived Badge Arcade's SpotPass data before the shutdown.
+- The agentic coding tool, Claude Code, for putting together all the pieces
 
 The original codebase of this project is based on Pretendo Network's
 [BOSS](https://github.com/PretendoNetwork/BOSS) servers.
