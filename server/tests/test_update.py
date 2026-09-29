@@ -33,17 +33,34 @@ class FakeResponse(io.BytesIO):
 		return False
 
 
+def test_this_version_is_valid():
+	assert update.VERSION_FILE.name == "version.txt"
+	update.parse_version(update.current_version())
+
+
 def test_check(monkeypatch):
-	release = {"tag_name": "v9.0.0", "zipball_url": "https://example.invalid/zip", "html_url": "https://example.invalid/"}
-	monkeypatch.setattr(update.urllib.request, "urlopen", lambda *a, **k: FakeResponse(json.dumps(release).encode()))
+	requested = []
+
+	def github(request, **kwargs):
+		requested.append(request.full_url)
+		return FakeResponse(b"9.0.0\n")
+	monkeypatch.setattr(update.urllib.request, "urlopen", github)
 	monkeypatch.setattr(update, "current_version", lambda: "1.0.0")
-	assert update.check()["version"] == "9.0.0"
+	latest = update.check()
+	assert latest["version"] == "9.0.0" and latest["zip_url"] == update.ZIP_URL
+	assert requested == [update.VERSION_URL] and update.VERSION_URL.endswith("/main/version.txt")
 	monkeypatch.setattr(update, "current_version", lambda: "9.0.0")
 	assert update.check() is None
+	monkeypatch.setattr(update, "current_version", lambda: "10.0")
+	assert update.check() is None  # never "updates" to an older version
 
-	def no_releases(*args, **kwargs):
-		raise urllib.error.HTTPError(update.RELEASE_API, 404, "Not Found", {}, None)
-	monkeypatch.setattr(update.urllib.request, "urlopen", no_releases)
+	monkeypatch.setattr(update.urllib.request, "urlopen", lambda *a, **k: FakeResponse(b"<html>oops</html>"))
+	with pytest.raises(update.UpdateError, match="not a version number"):
+		update.check()
+
+	def missing(*args, **kwargs):
+		raise urllib.error.HTTPError(update.VERSION_URL, 404, "Not Found", {}, None)
+	monkeypatch.setattr(update.urllib.request, "urlopen", missing)
 	assert update.check() is None
 
 	def offline(*args, **kwargs):
@@ -60,7 +77,7 @@ def test_is_protected():
 			".git/config", "server/badge_arcade/__pycache__/x.pyc", "spotpass-letter/out/week.boss"):
 		assert update.is_protected(path, patterns), path
 	for path in ("manager.py", "server/config.example.json", "server/badge_arcade/server.py",
-			"spotpass-letter/out.py", "other.py", "VERSION"):
+			"spotpass-letter/out.py", "other.py", "version.txt"):
 		assert not update.is_protected(path, patterns), path
 
 
@@ -82,11 +99,11 @@ def test_install_zip_keeps_user_files(tmp_path: Path):
 	(tmp_path / ".update-manifest.json").write_text(json.dumps(["manager.py", "dropped.py", "server/config.json"]))
 
 	backup = update.install_zip(release_zip({
-		"VERSION": b"2.0.0\n", "manager.py": b"new", "server/new_module.py": b"new",
+		"version.txt": b"2.0.0\n", "manager.py": b"new", "server/new_module.py": b"new",
 		"server/config.json": b"from the release", "server/data/badge_arcade.db": b"from the release",
 	}), root=tmp_path)
 
-	assert (tmp_path / "VERSION").read_text() == "2.0.0\n"
+	assert (tmp_path / "version.txt").read_text() == "2.0.0\n"
 	assert (tmp_path / "manager.py").read_text() == "new"
 	assert (tmp_path / "server" / "new_module.py").read_text() == "new"
 	assert (tmp_path / "server" / "config.json").read_text() == "mine"
@@ -101,7 +118,7 @@ def test_install_zip_keeps_user_files(tmp_path: Path):
 
 @pytest.mark.parametrize("bad", ["top/../../outside.py", "/absolute.py", "C:/windows.py"])
 def test_install_zip_rejects_unsafe_paths(tmp_path: Path, bad: str):
-	buffer = io.BytesIO(release_zip({"VERSION": b"2.0.0"}))
+	buffer = io.BytesIO(release_zip({"version.txt": b"2.0.0"}))
 	with zipfile.ZipFile(buffer, "a") as archive:
 		archive.writestr(zipfile.ZipInfo(bad), b"x")  # ZipInfo keeps the name as given
 	with pytest.raises(update.UpdateError, match="unsafe"):
@@ -114,6 +131,17 @@ def test_install_zip_rejects_other_zips(tmp_path: Path):
 		update.install_zip(release_zip({"something.txt": b"x"}), root=tmp_path)
 	with pytest.raises(update.UpdateError):
 		update.install_zip(b"not a zip", root=tmp_path)
+
+
+
+def test_install_zip_refuses_a_download_that_isnt_newer(tmp_path: Path):
+	(tmp_path / "manager.py").write_text("old")
+	# GitHub's version.txt can be ahead of its zip for a few minutes
+	with pytest.raises(update.UpdateError, match="not newer"):
+		update.install_zip(release_zip({"version.txt": b"1.0.0", "manager.py": b"new"}), root=tmp_path, newer_than="1.0.0")
+	assert (tmp_path / "manager.py").read_text() == "old"
+	update.install_zip(release_zip({"version.txt": b"1.0.1", "manager.py": b"new"}), root=tmp_path, newer_than="1.0.0")
+	assert (tmp_path / "manager.py").read_text() == "new"
 
 
 def test_apply_refuses_while_running(monkeypatch):
