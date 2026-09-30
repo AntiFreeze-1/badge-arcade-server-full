@@ -123,15 +123,6 @@ current date as days pass.
 
 After serving a week or giving free plays, fully close and reopen Badge Arcade.
 
-## Your own badges and machines
-
-The **Badges**, **Machine editor** and **Custom weeks** tabs were the Badge
-Arcade Helper, a program of its own until version 2.0.0. They use the same
-`boot9.bin` and `other/` files as the rest of the manager; the first time you
-open one of them, it reads the archived weeks (a minute or so, then it's
-cached). Everything you make is kept in `helper/workspace/`, which updates never
-touch. [helper/README.md](helper/README.md) explains each tab.
-
 ## Updating
 
 The installed version is in `version.txt` and the manager's title bar.
