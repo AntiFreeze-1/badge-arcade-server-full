@@ -9,6 +9,11 @@ common constructions (HMAC-SHA256, salted SHA-256).
 
 The code comes from GodMode9 (NCCH image options > Extract .code). Put the
 key it finds in badge_arcade_hmac.key (32 hex digits).
+
+The samples are the SpotPass playinfo files in other/ (decrypted with
+boot9.bin), plus any saves the console has uploaded to this server
+(server/data/badge_arcade.db, which the server creates on its first start).
+The playinfo files alone are enough.
 """
 
 import argparse
@@ -45,18 +50,24 @@ def boss_payload(path: Path, key: bytes) -> bytes:
 def samples() -> list[tuple[str, bytes, bytes]]:
 	"""(description, signed body, signature) of every signed record we have."""
 	found = []
-	db = sqlite3.connect(f"file:{ROOT / 'server/data/badge_arcade.db'}?mode=ro", uri=True)
-	for data_id, data_type, meta in db.execute("select data_id, data_type, meta_binary from objects"):
-		if len(meta) > 32:
-			found.append((f"meta of data ID {data_id} (type {data_type})", meta[:-32], meta[-32:]))
+	database = ROOT / "server/data/badge_arcade.db"
+	if database.exists():  # only once the server has started
+		db = sqlite3.connect(f"file:{database}?mode=ro", uri=True)
+		for data_id, data_type, meta in db.execute("select data_id, data_type, meta_binary from objects"):
+			if len(meta) > 32:
+				found.append((f"meta of data ID {data_id} (type {data_type})", meta[:-32], meta[-32:]))
+		db.close()
 	for file in sorted((ROOT / "server/data/objects").glob("*.bin")):
 		blob = file.read_bytes()
 		if len(blob) > 32:
 			found.append((f"save file {file.name}", blob[:-32], blob[-32:]))
-	boss_key = key_from_boot9(ROOT / "spotpass-letter/boot9.bin")
-	for file in sorted((ROOT / "other").glob("playinfo*")):
-		payload = boss_payload(file, boss_key)
-		found.append((f"SpotPass {file.name}", payload[:-32], payload[-32:]))
+	playinfo = sorted((ROOT / "other").glob("playinfo*"))
+	boot9 = ROOT / "spotpass-letter/boot9.bin"
+	if playinfo and boot9.exists():
+		boss_key = key_from_boot9(boot9)
+		for file in playinfo:
+			payload = boss_payload(file, boss_key)
+			found.append((f"SpotPass {file.name}", payload[:-32], payload[-32:]))
 	return found
 
 
@@ -78,6 +89,9 @@ def main() -> int:
 
 	code = args.code.read_bytes()
 	known = samples()
+	if not known:
+		raise ValueError("no signed samples to test keys against. Put the SpotPass playinfo files in other/ and "
+			"boot9.bin in spotpass-letter/ (see README.md), or let Badge Arcade upload its save to the server first.")
 	# Search with the shortest sample, confirm with all the others
 	known.sort(key=lambda s: len(s[1]))
 	name, body, signature = known[0]

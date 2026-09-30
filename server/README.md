@@ -20,8 +20,9 @@ the [main README](../README.md). This file covers the server itself.
 | NEX secure | UDP 59401 | SecureConnection (+ `GetMaintenanceStatus`), DataStore (+ `GetMetaByOwnerId`), Shop (`PostPlayLog`, `GetRivToken`) |
 | HTTP | TCP 8080 | NASC login (`/ac`), save-data upload/download (S3-style), SpotPass `.boss` files |
 
-Saves are kept in `data/` (SQLite + one file per save version). The server keeps
-the previous version of each save as a backup.
+Saves are kept in `data/` (SQLite + one file per save version). The server creates
+`data/badge_arcade.db` and `data/objects/` on its first start, so neither is in the
+repository. The server keeps the previous version of each save as a backup.
 
 Game flow, as implemented:
 
