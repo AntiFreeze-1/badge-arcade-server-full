@@ -4,9 +4,10 @@
     with Nimbus) made by Badge Arcade go to the local server, which answers
     with the address of its NEX authentication server. NASC logins from
     other titles (the friends system, other games) pass through untouched.
-  * SpotPass downloads (npdl.cdn.nintendowifi.net) are served locally when
-    the server has a file with the same name in its SpotPass directory.
-    Everything else passes through untouched.
+  * SpotPass downloads (npdl.cdn.nintendowifi.net, or npdl.cdn.pretendo.cc
+    with Nimbus) are served locally when the server has a file with the same
+    name in its SpotPass directory. Badge Arcade's other files come from
+    Nintendo's CDN, also with Nimbus. Everything else passes through untouched.
 
 The NEX traffic itself is UDP and goes straight to the server, and the
 DataStore upload/download URLs handed out by the server already point at it.
@@ -78,6 +79,10 @@ def policy_list() -> str:
 		f"<UpdateTime>{update_time}</UpdateTime>{priorities}</PolicyList>"
 	)
 
+# Badge Arcade's SpotPass (BOSS) codes, USA, EUR and JPN (as in the server's http_server.py)
+BADGE_ARCADE_BOSS_CODES = {"OvbmGLZ9senvgV3K", "J6la9Kj8iqTvAPOq", "j0ITmVqVgfUxe0O9"}
+NINTENDO_NPDL_HOST = "npdl.cdn.nintendowifi.net"
+
 # Nintendo Badge Arcade USA and EUR (from Pretendo's BOSS server)
 DEFAULT_TITLE_IDS = "0004000000153500,0004000000153600"
 # Game server ID used by the original Badge Arcade server project
@@ -92,6 +97,12 @@ def nasc_decode(value: str) -> str:
 		return base64.b64decode(value).decode(errors="replace")
 	except ValueError:
 		return ""
+
+
+def is_badge_arcade_spotpass(path: str) -> bool:
+	"""/p01/nsa/<BOSS code>/...: one of Badge Arcade's SpotPass files."""
+	parts = path.split("?", 1)[0].split("/")
+	return len(parts) > 4 and parts[1:3] == ["p01", "nsa"] and parts[3] in BADGE_ARCADE_BOSS_CODES
 
 
 def id_set(option: str) -> set[str]:
@@ -286,6 +297,12 @@ class BadgeArcadeRedirect:
 			name = flow.request.path.split("?", 1)[0].rsplit("/", 1)[-1]
 			if name in self.boss_files():
 				self.redirect(flow, "/boss" + flow.request.path)
+			elif host != NINTENDO_NPDL_HOST and is_badge_arcade_spotpass(flow.request.path):
+				# Nimbus sends a Pretendo account's SpotPass downloads to Pretendo's CDN, which
+				# fails for Badge Arcade's files (004-3003). Nintendo's CDN still has the same
+				# files, and a console on Nintendo gets them from there.
+				logger.info("Getting %s from Nintendo's CDN instead of %s", flow.request.path, host)
+				flow.request.host = NINTENDO_NPDL_HOST
 
 
 addons = [BadgeArcadeRedirect()]

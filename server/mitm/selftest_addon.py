@@ -89,6 +89,24 @@ def main() -> None:
 		addon.request(flow)
 		assert flow.request.host == "npdl.cdn.nintendowifi.net"
 
+		# Nimbus (a Pretendo account) asks Pretendo's CDN for the same files
+		flow = get_flow("https://npdl.cdn.pretendo.cc/p01/nsa/OvbmGLZ9senvgV3K/FGONLYT/playinfo_v131.dat?tm=2")
+		addon.request(flow)
+		assert is_redirected(flow)
+
+		# ...and gets Badge Arcade's files the server doesn't have from Nintendo's CDN, as without Nimbus
+		for url in ["https://npdl.cdn.pretendo.cc/p01/nsa/OvbmGLZ9senvgV3K/data/allbadge_v131.dat",
+				"https://npdl.cdn.pretendo.cc/p01/nsa/J6la9Kj8iqTvAPOq/news/en/news_v131.dat?tm=2"]:
+			flow = get_flow(url)
+			addon.request(flow)
+			assert flow.request.host == "npdl.cdn.nintendowifi.net" and flow.request.scheme == "https", url
+			assert flow.request.path == url.split("pretendo.cc", 1)[1], url
+
+		# Other titles' SpotPass stays with Pretendo
+		flow = get_flow("https://npdl.cdn.pretendo.cc/p01/nsa/uuI82221UKkqmWmG/data/data.dat")
+		addon.request(flow)
+		assert flow.request.host == "npdl.cdn.pretendo.cc"
+
 		# NEX token requests (NNID account server): Badge Arcade's are answered
 		# by the server, using the PID from the friends system's NASC login
 		calls = []
@@ -111,7 +129,17 @@ def main() -> None:
 		addon.request(flow)
 		assert flow.response is None and len(calls) == 1  # other games pass through
 
-		# SpotPass policy list: answered locally so Badge Arcade's tasks may run
+		# With Nimbus, from Pretendo's account server
+		flow = get_flow("https://account.pretendo.cc/v1/api/provider/nex_token/@me?game_server_id=00134600")
+		flow.request.headers["X-Nintendo-Title-ID"] = "0004000000153500"
+		addon.request(flow)
+		assert len(calls) == 2 and flow.response is not None and flow.response.status_code == 200
+
+		# SpotPass policy list: answered locally so Badge Arcade's tasks may run (also Pretendo's)
+		flow = get_flow("https://nppl.c.app.pretendo.cc/p01/policylist/3/US")
+		addon.request(flow)
+		assert flow.response is not None and "<DefaultStop>false</DefaultStop>" in flow.response.get_text()
+
 		flow = get_flow("https://nppl.c.app.nintendowifi.net/p01/policylist/3/US")
 		addon.request(flow)
 		assert flow.response is not None and flow.response.status_code == 200
@@ -142,6 +170,12 @@ def main() -> None:
 		flow = hotspot_flow("https://npdl.cdn.nintendowifi.net/p01/nsa/OvbmGLZ9senvgV3K/FGONLYT/playinfo_v131.dat")
 		addon.request(flow)
 		assert is_redirected(flow) and flow.request.path.startswith("/boss/")
+
+		# Nimbus in hotspot mode: the Host header goes to Nintendo's CDN along with the request
+		flow = hotspot_flow("https://npdl.cdn.pretendo.cc/p01/nsa/OvbmGLZ9senvgV3K/data/allbadge_v131.dat")
+		addon.request(flow)
+		assert flow.request.host == "npdl.cdn.nintendowifi.net" and flow.request.port == 443
+		assert flow.request.headers["Host"] == "npdl.cdn.nintendowifi.net"
 
 		flow = hotspot_flow("https://account.nintendo.net/v1/api/people/@me/profile")
 		addon.request(flow)

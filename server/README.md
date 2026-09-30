@@ -144,8 +144,10 @@ it needs the NoSSL patch (see [One-time setup](#one-time-setup)). The proxy uses
 - sends Badge Arcade's NASC login (`nasc.nintendowifi.net`, or
   `nasc.pretendo.cc` with Nimbus) to this server. Logins from the friends
   system and other games pass through untouched.
-- serves SpotPass files (`npdl.cdn.nintendowifi.net`) that exist in
-  `boss_dir`, and passes the rest through.
+- serves SpotPass files (`npdl.cdn.nintendowifi.net`, or `npdl.cdn.pretendo.cc`
+  with Nimbus) that exist in `boss_dir`. Badge Arcade's other SpotPass files
+  come from Nintendo's CDN, which still has them, also with Nimbus (Pretendo's
+  CDN doesn't serve them: error 004-3003). Other titles' files pass through.
 
 The NEX traffic is UDP and goes straight to the server. Save uploads and
 downloads use plain HTTP URLs that the server hands out.
