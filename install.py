@@ -143,9 +143,10 @@ def checklist() -> list[Check]:
 		Check("boot9.bin (spotpass-letter/)", (LETTER_DIR / "boot9.bin").exists(),
 			"Found." if (LETTER_DIR / "boot9.bin").exists() else "Needed to switch machines and give free plays. Dump it with GodMode9.",
 			folder=LETTER_DIR),
-		Check("Game key (spotpass-letter/badge_arcade_hmac.key)", (LETTER_DIR / "badge_arcade_hmac.key").exists(),
-			"Found." if (LETTER_DIR / "badge_arcade_hmac.key").exists() else "Needed for free plays. See README.md.",
-			folder=LETTER_DIR),
+		# Optional: the server never reads it; only free plays re-sign playinfo with it
+		Check("Game key (spotpass-letter/badge_arcade_hmac.key, optional)", True,
+			"Found." if (LETTER_DIR / "badge_arcade_hmac.key").exists() else "Only needed for free plays: the server "
+			"and switching machines work without it. See README.md.", folder=LETTER_DIR),
 		Check("SpotPass files (other/)", not missing_spotpass,
 			"Found." if not missing_spotpass else f"Missing: {', '.join(missing_spotpass)}. See README.md.", folder=OTHER_DIR),
 	]

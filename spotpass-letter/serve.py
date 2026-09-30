@@ -280,7 +280,11 @@ def default_free_play_date() -> datetime.date:
 def give_free_plays(plays: int, key: bytes, date: datetime.date | None = None) -> str:
 	"""Free plays for `date` (default: the game date). The game only pays out a campaign
 	while its own date (the server's game_date) is inside it."""
-	hmac_key = bytes.fromhex((HERE / "badge_arcade_hmac.key").read_text().strip())
+	key_file = HERE / "badge_arcade_hmac.key"
+	if not key_file.exists():
+		raise FileNotFoundError("Free plays need the game's key in spotpass-letter/badge_arcade_hmac.key. "
+			"README.md explains how to get it with find_sign_key.py.")
+	hmac_key = bytes.fromhex(key_file.read_text().strip())
 	today = date or default_free_play_date()
 	state = load_state()
 	state["free_play_round"] = (state["free_play_round"] + 1) % 100
