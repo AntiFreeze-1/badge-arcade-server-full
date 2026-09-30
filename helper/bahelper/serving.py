@@ -190,7 +190,7 @@ class Server:
 			except ValueError:
 				made_by_us = False
 			if not made_by_us:
-				slug = f"{slug}-helper"  # don't overwrite a week made on the Build a week tab
+				slug = f"{slug}-helper"  # don't overwrite a week made by custom_week.py (or the old Build a week tab)
 				meta_path = folder / f"{slug}.json"
 		boss_path = folder / f"{slug}.boss"
 		temp = boss_path.with_suffix(".boss.tmp")

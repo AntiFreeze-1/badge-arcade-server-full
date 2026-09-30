@@ -23,10 +23,10 @@ SETTINGS_FILE = ROOT / importer.SETTINGS_NAME
 
 
 def add_styles(window) -> None:
-	"""The helper's styles, next to the manager's Big and Hint labels."""
+	"""The helper's styles, next to the manager's (manager_ui/widgets.py: the same colours)."""
 	style = ttk.Style(window)
-	style.configure("Bad.TLabel", foreground="#b00020")
-	style.configure("Good.TLabel", foreground="#1b7a2e")
+	style.configure("Bad.TLabel", foreground="#b3261e")
+	style.configure("Good.TLabel", foreground="#1a7f37")
 	style.configure(TREE_STYLE, rowheight=36)
 
 

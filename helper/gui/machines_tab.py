@@ -97,7 +97,7 @@ class MachinesTab(ttk.Frame):
 		self.title_var.trace_add("write", lambda *a: self.mark_dirty() if self.cm and self.title_var.get() != self.cm.title else None)
 		self.name_label = ttk.Label(top, style="Hint.TLabel")
 		self.name_label.pack(side="left", padx=6)
-		ttk.Button(top, text="Save", command=self.save).pack(side="right")
+		ttk.Button(top, text="Save", style="Accent.TButton", command=self.save).pack(side="right")
 		ttk.Button(top, text="Revert", command=self.revert).pack(side="right", padx=4)
 		self.dirty_label = ttk.Label(top, style="Bad.TLabel")
 		self.dirty_label.pack(side="right", padx=6)

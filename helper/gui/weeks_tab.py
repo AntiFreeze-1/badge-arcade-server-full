@@ -4,12 +4,12 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from bahelper.archive import series, series_name
+from bahelper.archive import badge_label, series, series_name
 from bahelper.serving import EXPORT_NS_DATA_ID
 from bahelper.week import daily_lineup
 from bahelper.workspace import WeekPlan
 
-from .common import TITLE, TREE_STYLE
+from .common import TITLE, TREE_STYLE, auto_wrap
 
 
 class WeeksTab(ttk.Frame):
@@ -17,9 +17,10 @@ class WeeksTab(ttk.Frame):
 		super().__init__(parent, padding=10)
 		self.app = app
 		self.extras: dict = {}
-		ttk.Label(self, text="Pick the machines for the week: yours and any of Nintendo's. Then Build and serve, and "
-			"fully close and reopen Badge Arcade on the 3DS. Nintendo's weeks had about 30 machines a day.",
-			style="Hint.TLabel", wraplength=1200).pack(anchor="w")
+		auto_wrap(ttk.Label(self, text="Pick the machines for the week: yours, and Nintendo's from every archived week, "
+			"by series or one by one (select a machine to list its badges). Then Build and serve, and fully close and "
+			"reopen Badge Arcade on the 3DS. Nintendo's weeks had about 30 machines a day.",
+			style="Hint.TLabel", wraplength=900, justify="left")).pack(fill="x")
 
 		plans = ttk.Frame(self)
 		plans.pack(fill="x", pady=6)
@@ -42,6 +43,7 @@ class WeeksTab(ttk.Frame):
 		self.catalog.pack(side="left", fill="both", expand=True)
 		scroll.pack(side="left", fill="y")
 		self.catalog.bind("<Double-1>", lambda e: self.add())
+		self.catalog.bind("<<TreeviewSelect>>", lambda e: self.show_machine(self.catalog))
 
 		middle = ttk.Frame(body, padding=6)
 		middle.pack(side="left", fill="y")
@@ -53,11 +55,22 @@ class WeeksTab(ttk.Frame):
 		right.pack(side="left", fill="both", expand=True)
 		ttk.Label(right, text="In the week").pack(anchor="w")
 		self.chosen = ttk.Treeview(right, style=TREE_STYLE, show="tree", selectmode="extended")
-		self.chosen.pack(fill="both", expand=True)
+		scroll = ttk.Scrollbar(right, orient="vertical", command=self.chosen.yview)
+		self.chosen.configure(yscrollcommand=scroll.set)
+		self.chosen.pack(side="left", fill="both", expand=True)
+		scroll.pack(side="left", fill="y")
 		self.chosen.bind("<Double-1>", lambda e: self.remove())
+		self.chosen.bind("<<TreeviewSelect>>", lambda e: self.show_machine(self.chosen))
 
-		self.report = tk.Text(body, width=46, wrap="word", font=("Segoe UI", 9), state="disabled")
-		self.report.pack(side="left", fill="both", padx=(8, 0))
+		report = ttk.Frame(body)
+		report.pack(side="left", fill="both", padx=(8, 0))
+		ttk.Label(report, text="Details").pack(anchor="w")
+		self.report = tk.Text(report, width=46, wrap="word", font=("Segoe UI", 9), state="disabled", padx=8, pady=6,
+			relief="flat", borderwidth=0, highlightthickness=1, highlightbackground="#abadb3")
+		scroll = ttk.Scrollbar(report, orient="vertical", command=self.report.yview)
+		self.report.configure(yscrollcommand=scroll.set)
+		self.report.pack(side="left", fill="both", expand=True)
+		scroll.pack(side="left", fill="y")
 
 		options = ttk.Frame(self)
 		options.pack(fill="x", pady=(8, 0))
@@ -74,7 +87,7 @@ class WeeksTab(ttk.Frame):
 		self.extras_label.pack(side="left")
 		actions = ttk.Frame(self)
 		actions.pack(fill="x", pady=(8, 0))
-		ttk.Button(actions, text="Build and serve", command=self.serve).pack(side="left")
+		ttk.Button(actions, text="Build and serve", style="Accent.TButton", command=self.serve).pack(side="left")
 		ttk.Button(actions, text="Save to the server's weeks", command=self.save_to_server).pack(side="left", padx=6)
 		ttk.Button(actions, text="Export .boss file...", command=self.export).pack(side="left")
 		ttk.Button(actions, text="Put Nintendo's allbadge back", command=self.restore_allbadge).pack(side="right")
@@ -122,6 +135,23 @@ class WeeksTab(ttk.Frame):
 	def remove(self) -> None:
 		for item in self.chosen.selection():
 			self.chosen.delete(item)
+
+	def show_machine(self, tree: ttk.Treeview) -> None:
+		"""Lists the badges of the machine picked last in tree, in the Details panel."""
+		picked = [item for item in tree.selection() if item.startswith(("custom:", "nintendo:"))]
+		if not picked or not self.app.archive:
+			return
+		kind, name = picked[-1].split(":", 1)
+		if kind == "custom":
+			cm = self.app.workspace.get_machine(name)
+			if cm is None:
+				return
+			badges = sorted(set(cm.load().prizes))
+			heading = f"{cm.title}\nYours ({name}), made from Nintendo's {cm.template}"
+		else:
+			badges = self.app.archive.machine_badges(name)
+			heading = f"{name}\n{series_name(series(name))}"
+		self.write_report(f"{heading}\n\n{len(badges)} badges:\n" + "\n".join(badge_label(b) for b in badges))
 
 	def current_plan(self) -> WeekPlan:
 		items = list(self.chosen.get_children())

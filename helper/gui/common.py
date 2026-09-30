@@ -209,6 +209,16 @@ def render_machine(pictures: Pictures, machine: f.Machine, margin: int = 40, zoo
 	return canvas
 
 
+def auto_wrap(label: tk.Widget) -> tk.Widget:
+	"""Wraps the label's text to the width it's given: pack it with fill="x" (or grid it with
+	sticky="ew"), or it shrinks to fit its own text. (The manager's widgets.auto_wrap too.)"""
+	def wrap(event) -> None:
+		if event.width > 1 and abs(int(str(label.cget("wraplength")) or 0) - (event.width - 4)) > 2:
+			label.configure(wraplength=max(event.width - 4, 100))
+	label.bind("<Configure>", wrap, add="+")
+	return label
+
+
 class Tooltip:
 	"""A small hint that shows while the mouse is over a widget."""
 
