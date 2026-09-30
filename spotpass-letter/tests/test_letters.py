@@ -23,6 +23,8 @@ KEY = bytes(range(16))
 def private_dirs(tmp_path: Path, monkeypatch):
 	monkeypatch.setattr(letters, "LETTERS_DIR", tmp_path / "letters")
 	monkeypatch.setattr(serve, "LIVE_NEWS", tmp_path / "other" / "news.dat.boss")
+	# Not the install's real other/playinfo_v131.dat.boss (none here: letters use the news task)
+	monkeypatch.setattr(serve, "LIVE_PLAYINFO", tmp_path / "other" / "playinfo_v131.dat.boss")
 	monkeypatch.setattr(serve, "STATE", tmp_path / "serve_state.json")
 	(tmp_path / "other").mkdir()
 

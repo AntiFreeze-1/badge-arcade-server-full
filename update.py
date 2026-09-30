@@ -12,6 +12,12 @@ main branch's files are downloaded and copied over this folder. Your own files a
 settings, and anything else .gitignore lists. The files an update replaces are
 zipped into backups/ first. Stop the server and proxy before updating.
 
+Older installs update with the update.py they have, so the project keeps what those
+need: version.txt (from 1.0.1 on), and a VERSION file with a GitHub release of the same
+number (1.0.0, which read releases). Setup.bat and "Badge Arcade Manager.bat" never
+change: Windows reads a running .bat from where it left off, so a new one would run
+half-lines of it. install.py --packages keeps working and doesn't fail for the helper.
+
 Uses only Python's standard library, so it works before the packages are
 installed. BADGE_ARCADE_VERSION_URL and BADGE_ARCADE_ZIP_URL override where
 the version number and the files are downloaded from.
@@ -53,6 +59,8 @@ PROTECTED = [
 	".git/", ".update-manifest.json", "/backups/", "/other/", "/manager_settings.json",
 	"/server/config.json", "/server/nex-keys.txt", "/server/data/", "/server/backups/", "/server/logs/",
 	"/server/mitm/.venv/", "*.key", "*.code", "boot9*.bin", "*.boss", "*.enc",
+	# Your own badges and machines (the Badges, Machine editor and Custom weeks tabs)
+	"/helper/workspace/", "/helper/helper_settings.json", "/helper/helper_state.json", "/helper/extra/", "/helper/other/",
 ]
 
 

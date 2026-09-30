@@ -1,11 +1,13 @@
 """Badge Arcade Manager: one window for setup, the server, the proxy or
-hotspot, the machines, free plays, letters and saves.
+hotspot, the machines, your own badges and machines, free plays, letters and saves.
 
   python manager.py        (or double-click "Badge Arcade Manager.bat")
 
 Everything it does can also be done with the command-line tools it uses:
 install.py, server/mitm/hotspot.py, spotpass-letter/serve.py,
 spotpass-letter/custom_week.py and server's "python -m badge_arcade.admin".
+The Badges, Machine editor and Custom weeks tabs are the Badge Arcade Helper
+(helper/), which used to be a program of its own.
 """
 
 from collections import Counter
@@ -26,10 +28,11 @@ from tkinter import filedialog, messagebox, ttk
 ROOT = Path(__file__).resolve().parent
 SERVER_DIR = ROOT / "server"
 LETTER_DIR = ROOT / "spotpass-letter"
+HELPER_DIR = ROOT / "helper"
 LOG_DIR = SERVER_DIR / "logs"
 PID_FILE = LOG_DIR / "manager_pids.json"
 SETTINGS_FILE = ROOT / "manager_settings.json"
-sys.path[:0] = [str(LETTER_DIR), str(SERVER_DIR), str(SERVER_DIR / "mitm")]
+sys.path[:0] = [str(LETTER_DIR), str(SERVER_DIR), str(SERVER_DIR / "mitm"), str(HELPER_DIR)]
 
 import hotspot  # noqa: E402
 import install  # noqa: E402
@@ -42,6 +45,21 @@ from badge_arcade import admin  # noqa: E402
 from badge_arcade import maintenance  # noqa: E402
 from badge_arcade.config import lan_address, load_config  # noqa: E402
 from badge_arcade.storage import Storage  # noqa: E402
+
+# The custom badge tabs need numpy and pymunk, which an update may not have been able to
+# install: without them the rest of the manager still works, and those tabs offer to install them
+try:
+	import numpy, pymunk  # noqa: E401, F401 (pymunk: the physics check imports it only when it runs)
+	from gui.app import HelperContext
+	from gui.badges_tab import BadgesTab
+	from gui.machines_tab import MachinesTab
+	from gui.setup_tab import HelperSettings
+	from gui.weeks_tab import WeeksTab
+	HELPER_ERROR: ImportError | None = None
+except ImportError as e:
+	HELPER_ERROR = e
+# Tab title -> the helper's own name for it
+HELPER_TABS = {"Badges": "Badges", "Machine editor": "Machines", "Custom weeks": "Weeks"}
 
 # Internal series codes -> names (from the badge files; a few are best guesses)
 SERIES_NAMES = {
@@ -148,8 +166,8 @@ class Manager(tk.Tk):
 	def __init__(self):
 		super().__init__()
 		self.title(f"Badge Arcade Manager {update.current_version()}")
-		self.geometry("1000x780")
-		self.minsize(860, 560)
+		self.geometry("1320x880")
+		self.minsize(1100, 720)
 		try:
 			self.key = serve.boss_key()
 		except (OSError, ValueError):
@@ -175,20 +193,29 @@ class Manager(tk.Tk):
 		style.configure("Big.TLabel", font=("Segoe UI", 11, "bold"))
 		style.configure("Hint.TLabel", foreground="#666")
 
+		self.status = tk.StringVar(value="Ready.")
+		status_bar = ttk.Frame(self)
+		ttk.Label(status_bar, textvariable=self.status, anchor="w", padding=(10, 4)).pack(side="left", fill="x", expand=True)
+		progress = ttk.Progressbar(status_bar, mode="determinate", length=160)  # the helper runs it
+		progress.pack(side="right", padx=10)
+		self.helper = HelperContext(self, self.status, progress) if HELPER_ERROR is None else None
+
 		notebook = ttk.Notebook(self)
 		notebook.pack(fill="both", expand=True, padx=8, pady=(8, 0))
-		for title, build in (("Setup", self.build_setup_tab), ("Server", self.build_server_tab), ("Machines", self.build_machines_tab),
-				("Build a week", self.build_builder_tab), ("Free plays", self.build_plays_tab), ("Letters", self.build_letters_tab), ("Saves", self.build_saves_tab),
-				("Maintenance", self.build_maintenance_tab)):
-			frame = ttk.Frame(notebook, padding=10)
+		for title, build in (("Setup", self.build_setup_tab), ("Server", self.build_server_tab), ("Serve a week", self.build_machines_tab),
+				("Build a week", self.build_builder_tab), ("Badges", self.build_helper_tab), ("Machine editor", self.build_helper_tab),
+				("Custom weeks", self.build_helper_tab), ("Free plays", self.build_plays_tab), ("Letters", self.build_letters_tab),
+				("Saves", self.build_saves_tab), ("Maintenance", self.build_maintenance_tab)):
+			frame = ttk.Frame(notebook, padding=0 if title in HELPER_TABS else 10)  # the helper's tabs have their own
 			notebook.add(frame, text=title)
-			build(frame)
+			if title in HELPER_TABS:
+				build(frame, HELPER_TABS[title])
+			else:
+				build(frame)
 		notebook.bind("<<NotebookTabChanged>>", lambda e: self.on_tab(notebook.tab(notebook.select(), "text")))
 		if all(check.ok for check in install.checklist()):
 			notebook.select(1)  # set up already: open on the Server tab
-
-		self.status = tk.StringVar(value="Ready.")
-		ttk.Label(self, textvariable=self.status, anchor="w", padding=(10, 4)).pack(fill="x")
+		status_bar.pack(fill="x")
 
 		self.protocol("WM_DELETE_WINDOW", self.on_close)
 		self.refresh_services()
@@ -224,7 +251,14 @@ class Manager(tk.Tk):
 		threading.Thread(target=run, daemon=True).start()
 
 	def on_tab(self, title: str) -> None:
-		if title in ("Machines", "Build a week", "Free plays"):
+		if title in HELPER_TABS:
+			if self.helper:
+				self.helper.start()  # reads the archive the first time
+				page = self.helper.tabs.get(HELPER_TABS[title])
+				if hasattr(page, "on_show"):
+					page.on_show()
+			return
+		if title in ("Serve a week", "Build a week", "Free plays"):
 			problem = self.missing_files()
 			if problem:
 				self.status.set(f"Not set up yet: {problem} See README.md.")
@@ -233,7 +267,7 @@ class Manager(tk.Tk):
 			self.refresh_letters()
 			if self.key is None:
 				self.status.set(f"Sending letters needs {self.missing_files()} See README.md.")
-		elif title == "Machines":
+		elif title == "Serve a week":
 			self.refresh_weeks()
 		elif title == "Build a week" and self.builder is None:
 			self.load_builder()
@@ -247,6 +281,7 @@ class Manager(tk.Tk):
 	# --- Setup tab ---
 
 	def build_setup_tab(self, tab: ttk.Frame) -> None:
+		tab = scrollable(tab)
 		self.update_banner = ttk.Frame(tab, padding=(0, 0, 0, 8))
 		self.update_text = ttk.Label(self.update_banner, style="Big.TLabel")
 		self.update_text.pack(side="left")
@@ -272,6 +307,15 @@ class Manager(tk.Tk):
 		self.auto_update = tk.BooleanVar(value=bool(self.settings.get("auto_update")))
 		ttk.Checkbutton(versions, text="Install updates automatically when the manager opens", variable=self.auto_update,
 			command=self.change_auto_update).pack(side="left", padx=6)
+
+		custom = ttk.LabelFrame(tab, text="Your own badges and machines (the Badges, Machine editor and Custom weeks tabs)",
+			padding=10)
+		custom.pack(fill="x", pady=(8, 0))
+		if self.helper:
+			self.helper.tabs["Setup"] = HelperSettings(custom, self.helper)
+			self.helper.tabs["Setup"].pack(fill="x")
+		else:
+			self.build_helper_missing(custom)
 
 		connect = ttk.LabelFrame(tab, text="Connect the 3DS", padding=10)
 		connect.pack(fill="both", expand=True, pady=(8, 0))
@@ -359,29 +403,42 @@ class Manager(tk.Tk):
 		self.background("Checking for updates...", work, done)
 
 	def show_update(self, release: dict | None, install: bool) -> None:
-		"""Shows the update banner; install: install it now if updates are set to install automatically."""
+		"""Shows the update banner. install (the check when the window opens): install it now if updates
+		are set to install automatically, and otherwise offer to bring over a standalone helper's work."""
 		if release is None:
 			self.update_banner.pack_forget()
-			return
-		self.update_text.config(text=f"Version {release['version']} is available (you have {update.current_version()}).")
-		self.update_banner.pack(fill="x", before=self.checks_frame)
-		if install and self.settings.get("auto_update"):
-			self.install_update(ask=False)
+		else:
+			self.update_text.config(text=f"Version {release['version']} is available (you have {update.current_version()}).")
+			self.update_banner.pack(fill="x", before=self.checks_frame)
+			if install and self.settings.get("auto_update") and self.install_update(ask=False):
+				return  # the manager closes once it's installed
+		if install:
+			self.offer_helper_import()
 
 	def change_auto_update(self) -> None:
 		self.settings["auto_update"] = self.auto_update.get()
 		save_settings(self.settings)
 
-	def install_update(self, ask: bool) -> None:
+	def install_update(self, ask: bool) -> bool:
+		"""Installs the version the last check found. True once it's installing (the manager closes afterwards)."""
 		release = self.settings.get("update_release")
 		if not release:
-			return
+			return False
+		unsaved = self.helper.unsaved_machine() if self.helper else None
+		if self.helper and self.helper.busy:
+			if ask:
+				messagebox.showinfo("Badge Arcade Manager", "Wait until the custom badge work in the status bar is done, "
+					"then update.")
+			return False
+		if unsaved and not ask:
+			return False  # not while you're editing: the banner stays, for later
 		ours = [s for s in (self.server, self.proxy) if s.pid() and s.listening()]
 		if ask and not messagebox.askyesno("Badge Arcade Manager", f"Install version {release['version']}?\n\n"
 				+ ("The server and proxy will be stopped. " if ours else "")
+				+ (f"The machine {unsaved} has changes you haven't saved, which will be lost. " if unsaved else "")
 				+ "Your settings, saves, SpotPass files and keys are kept, and the replaced files are backed up. "
 				"The manager closes afterwards; open it again to use the new version."):
-			return
+			return False
 
 		def work():
 			for service in ours:
@@ -400,6 +457,21 @@ class Manager(tk.Tk):
 			self.destroy()
 
 		self.background(f"Installing version {release['version']}...", work, done)
+		return True
+
+	def offer_helper_import(self) -> None:
+		"""Offers once to bring over the work of a standalone Badge Arcade Helper next to this folder."""
+		if not self.helper or self.settings.get("helper_import_offered"):
+			return
+		found = self.helper.importable()
+		if not found:
+			return
+		self.settings["helper_import_offered"] = True
+		save_settings(self.settings)
+		if messagebox.askyesno("Badge Arcade Manager", "The Badge Arcade Helper is part of the manager now: its Badges, "
+				"Machine editor and Custom weeks tabs are here.\n\nCopy your badges, machines, weeks and settings from "
+				f"{found[0]}? That folder isn't changed. (Later: Setup tab, Import from Badge Arcade Helper.)", parent=self):
+			self.helper.import_from(found[0])
 
 	def refresh_checklist(self) -> None:
 		for widget in self.checklist_frame.winfo_children():
@@ -415,14 +487,24 @@ class Manager(tk.Tk):
 			elif check.folder:
 				ttk.Button(self.checklist_frame, text="Open folder",
 					command=lambda c=check: self.open_folder(c.folder)).grid(row=row, column=3, padx=6)
+		if self.helper:
+			self.helper.refresh_setup()
 
 	def fix(self, check: install.Check) -> None:
 		work, message = {
 			"packages": (install.install_packages, "Installing the Python packages..."),
+			"helper-packages": (install.install_helper_packages, "Installing numpy and pymunk for your own badges and machines..."),
 			"config": (install.create_config, "Creating server/config.json..."),
 			"proxy": (install.setup_proxy, "Setting up the proxy (downloads about 100 MB, a minute or two)..."),
 		}[check.fix]
-		self.background(message, work, lambda _: self.refresh_checklist())
+
+		def done(_):
+			self.refresh_checklist()
+			if check.fix == "helper-packages" and HELPER_ERROR is not None:
+				messagebox.showinfo("Badge Arcade Manager", "Installed. Close the manager and open it again to use the "
+					"Badges, Machine editor and Custom weeks tabs.")
+
+		self.background(message, work, done)
 
 	@staticmethod
 	def open_folder(folder: Path) -> None:
@@ -434,7 +516,9 @@ class Manager(tk.Tk):
 		(self.proxy_panel if hotspot_mode else self.hotspot_panel).pack_forget()
 		(self.hotspot_panel if hotspot_mode else self.proxy_panel).pack(fill="x", anchor="w")
 		if hotspot_mode:
-			self.refresh_hotspot()
+			# Once the window is running: the other tabs are still being built at start, and the
+			# answer from refresh_hotspot's thread can only arrive while the window's loop runs
+			self.after_idle(self.refresh_hotspot)
 
 	def change_connection(self) -> None:
 		mode = self.connection.get()
@@ -779,7 +863,7 @@ class Manager(tk.Tk):
 				self.log_view.configure(state="disabled")
 		self.after(1000, self.poll_logs)
 
-	# --- Machines tab ---
+	# --- Serve a week tab ---
 
 	def build_machines_tab(self, tab: ttk.Frame) -> None:
 		ttk.Label(tab, text="Pick a week of machines and press Serve. Then fully close and reopen Badge Arcade "
@@ -980,6 +1064,25 @@ class Manager(tk.Tk):
 			messagebox.showinfo("Badge Arcade Manager", message)
 
 		self.background("Building the week...", work, done)
+
+	# --- Badges, Machine editor and Custom weeks tabs (helper/) ---
+
+	def build_helper_tab(self, tab: ttk.Frame, name: str) -> None:
+		if self.helper is None:
+			missing = ttk.Frame(tab, padding=10)
+			missing.pack(fill="both", expand=True)
+			self.build_helper_missing(missing)
+			return
+		page = {"Badges": BadgesTab, "Machines": MachinesTab, "Weeks": WeeksTab}[name](tab, self.helper)
+		page.pack(fill="both", expand=True)
+		self.helper.tabs[name] = page
+
+	def build_helper_missing(self, frame: ttk.Frame) -> None:
+		"""In place of the helper's tabs and settings while its packages aren't installed."""
+		ttk.Label(frame, text=f"Making your own badges and machines needs Python packages that aren't installed yet "
+			f"({HELPER_ERROR}).", wraplength=900, justify="left").pack(anchor="w")
+		ttk.Button(frame, text="Install them", command=lambda: self.fix(install.Check("", False, "", "helper-packages"))).pack(
+			anchor="w", pady=6)
 
 	# --- Free plays tab ---
 
@@ -1562,6 +1665,13 @@ class Manager(tk.Tk):
 		self.refresh_status()
 
 	def on_close(self) -> None:
+		unsaved = self.helper.unsaved_machine() if self.helper else None
+		if unsaved and not messagebox.askyesno("Badge Arcade Manager", f"The machine {unsaved} has changes you haven't "
+				"saved (Machine editor tab). Close anyway, and lose them?"):
+			return
+		if self.helper and self.helper.busy and not messagebox.askyesno("Badge Arcade Manager", "Your own badges and "
+				"machines are still being worked on (see the status bar). Close anyway, and stop it?"):
+			return
 		ours = [s for s in (self.server, self.proxy) if s.pid() and s.listening()]
 		hotspot_on = bool(hotspot.hosts_ip())
 		if ours or hotspot_on:
@@ -1605,6 +1715,32 @@ def hotspot_address() -> str | None:
 			return ip
 		except OSError:
 			return None
+
+
+def scrollable(parent: ttk.Frame) -> ttk.Frame:
+	"""A frame filling parent that scrolls when what's in it is taller than the window."""
+	canvas = tk.Canvas(parent, highlightthickness=0, borderwidth=0, yscrollincrement=20,
+		background=ttk.Style(parent).lookup("TFrame", "background") or None)
+	bar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+	canvas.configure(yscrollcommand=bar.set)
+	bar.pack(side="right", fill="y")
+	canvas.pack(side="left", fill="both", expand=True)
+	inner = ttk.Frame(canvas)
+	item = canvas.create_window(0, 0, window=inner, anchor="nw")
+
+	def fit(_event=None) -> None:
+		canvas.itemconfigure(item, width=canvas.winfo_width())
+		canvas.configure(scrollregion=(0, 0, canvas.winfo_width(), inner.winfo_reqheight()))
+
+	def wheel(event) -> None:
+		if inner.winfo_reqheight() > canvas.winfo_height():
+			canvas.yview_scroll(int(-event.delta / 120), "units")
+
+	inner.bind("<Configure>", fit)
+	canvas.bind("<Configure>", fit)
+	canvas.bind("<Enter>", lambda e: canvas.bind_all("<MouseWheel>", wheel))
+	canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
+	return inner
 
 
 def load_settings() -> dict:

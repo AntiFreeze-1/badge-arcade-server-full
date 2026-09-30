@@ -33,7 +33,9 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           cache: pip
-          cache-dependency-path: server/requirements*.txt
+          cache-dependency-path: |
+            server/requirements*.txt
+            helper/requirements.txt
       # The same install users get (install.py works around netifaces on Windows)
       - name: Install packages
         run: |
@@ -44,4 +46,8 @@ jobs:
         run: python -m pytest tests
       - name: SpotPass tool tests
         working-directory: spotpass-letter
+        run: python -m pytest tests
+      # The archive tests skip themselves here: they need Nintendo's files and a console's key
+      - name: Custom badge tests
+        working-directory: helper
         run: python -m pytest tests

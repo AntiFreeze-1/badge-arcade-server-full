@@ -3,7 +3,8 @@
 A self-hosted server for **Nintendo Badge Arcade** on the 3DS, for personal use
 after Nintendo's shutdown. With it, the game connects again, saves your
 progress, loads weekly machines from archived SpotPass data, and can hand out
-free plays. A manager window takes care of setup and the day-to-day.
+free plays. You can also make your own badges and claw machines and put them in
+a week. A manager window takes care of setup and the day-to-day.
 
 > **No Nintendo files are included.** SpotPass data, console dumps, the game's
 > code and keys are copyrighted or console-specific, so you provide your own
@@ -90,7 +91,7 @@ The tools expect these names (US region):
 | other `data_v131-*.enc` weeks | Optional: more weeks to switch between. |
 
 Once they're in place, serve a week and give free plays in the manager's
-**Machines** and **Free plays** tabs, or from the command line:
+**Serve a week** and **Free plays** tabs, or from the command line:
 
 ```sh
 cd spotpass-letter
@@ -108,16 +109,34 @@ current date as days pass.
 
 | Tab | What it does |
 |---|---|
-| **Setup** | The checklist of what's installed and provided, connecting the 3DS (hotspot or proxy), and updates. |
+| **Setup** | The checklist of what's installed and provided, where your own badges' files are, connecting the 3DS (hotspot or proxy), and updates. |
 | **Server** | Start and stop the server and proxy, set the game date, see what the 3DS gets next, and watch logins, SpotPass downloads and saves as they happen. |
-| **Machines** | Every archived Nintendo week and your custom weeks; pick one and press *Serve*. |
+| **Serve a week** | Every archived Nintendo week and your custom weeks; pick one and press *Serve*. |
 | **Build a week** | Pick machine setups from every archived week (by series or one by one, with their badges listed) and build your own week. |
+| **Badges** | Make your own badges from pictures, in sets that get their own page in the badge collection. |
+| **Machine editor** | Make your own claw machines from Nintendo's: place badges and obstacles, check the physics, pick a background, icon and arm. |
+| **Custom weeks** | Put your machines and any of Nintendo's in a week, change the hall pictures, Arcade Bunny's lines and the gallery, and *Build and serve*. |
 | **Free plays** | Give free plays for the game date, and see which daily campaigns your save has collected. |
 | **Letters** | Write letters for the 3DS's Notifications applet, with a picture, and send them through SpotPass (experimental: see [spotpass-letter/README.md](spotpass-letter/README.md)). |
 | **Saves** | List, back up and reset saves. |
 | **Maintenance** | Put the server into maintenance, now or for a scheduled window: the 3DS can't log in and shows the system's maintenance error. No restart needed. |
 
 After serving a week or giving free plays, fully close and reopen Badge Arcade.
+
+## Your own badges and machines
+
+The **Badges**, **Machine editor** and **Custom weeks** tabs were the Badge
+Arcade Helper, a program of its own until version 2.0.0. They use the same
+`boot9.bin` and `other/` files as the rest of the manager; the first time you
+open one of them, it reads the archived weeks (a minute or so, then it's
+cached). Everything you make is kept in `helper/workspace/`, which updates never
+touch. [helper/README.md](helper/README.md) explains each tab.
+
+**Coming from the standalone helper?** If its folder is next to this one (for
+example `badge-arcade-helper` beside `badge-arcade-server-full`), the manager
+offers to copy your badges, machines, weeks and settings the first time it
+opens. Otherwise use **Import from Badge Arcade Helper...** in the Setup tab.
+The old folder isn't changed; delete it once everything's here.
 
 ## Updating
 
@@ -145,11 +164,24 @@ running. To update unattended, schedule `python update.py --apply --yes` in the
 project folder for a time the server isn't running (Windows Task Scheduler, or
 cron on Linux/macOS: `0 4 * * * cd /path/to/badge-arcade-server-full && python3 update.py --apply --yes`).
 
-To publish a new version, raise the number in `version.txt` (for example
-`1.0.0` to `1.1.0`) in the change that goes to `main`. Installs pick it up at
-their next check. Merge the rest of the change first or in the same merge:
+To publish a new version, raise the number in `version.txt` and `VERSION` (for
+example `2.0.0` to `2.1.0`) in the change that goes to `main`. Installs pick it
+up at their next check. Merge the rest of the change first or in the same merge:
 whatever is on `main` when the number goes up is what gets installed. The
 repository has to stay public for installs to see it.
+
+Every install updates with the `update.py` it already has, so a few things
+stay as they are for older versions:
+- Version 1.0.0 looked for GitHub *releases* (a tag like `v2.0.0`) instead of
+  `version.txt`, and wants a `VERSION` file in them. The `v2.0.0` release
+  brings those installs up to date; after that they update from `main` too.
+- `Setup.bat` and `Badge Arcade Manager.bat` never change (a test checks):
+  Windows goes on reading a running `.bat` file where it left off, so an
+  update that changed `Setup.bat` while it runs `update.py` would run pieces
+  of the new one. New setup steps go in `install.py`.
+- An update runs the new `install.py --packages`. It installs the helper's
+  numpy and pymunk too, but if those fail the update still counts as done,
+  and the Setup tab offers them again.
 
 ## What's here
 
@@ -157,9 +189,10 @@ repository has to stay public for installs to see it.
 |---|---|
 | `Setup.bat`, `install.py` | One-time setup, and the checklist the manager shows. |
 | `Badge Arcade Manager.bat`, `manager.py` | The manager window. |
-| `update.py`, `version.txt` | Checks for and installs new versions. |
+| `update.py`, `version.txt`, `VERSION` | Checks for and installs new versions (`VERSION` is for installs from 1.0.0). |
 | [`server/`](server/README.md) | The server: NEX authentication and secure servers, save storage, SpotPass file hosting, and the proxy and hotspot (`server/mitm/`). |
 | [`spotpass-letter/`](spotpass-letter/README.md) | SpotPass tools used by the manager: switch weeks (`serve.py`), build custom weeks (`custom_week.py`), free plays (`free_plays.py`), letters (`letters.py`, `make_letter.py`, experimental), and find the game's signing key (`find_sign_key.py`). |
+| [`helper/`](helper/README.md) | Your own badges and machines (the Badges, Machine editor and Custom weeks tabs): `bahelper/` does the work, `gui/` has the tabs, and `workspace/` keeps what you make. |
 
 ## Troubleshooting
 

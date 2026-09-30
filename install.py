@@ -4,6 +4,10 @@
   python install.py --check    only list what's done and what's still missing
   python install.py --packages only (re)install the Python packages (update.py runs this)
 
+The packages for your own badges and machines (helper/requirements.txt: numpy, pymunk)
+are installed too, but if they can't be, that's only a warning: the server doesn't need
+them, and an update that runs --packages still succeeds. The manager offers them again.
+
 Safe to run again: it keeps an existing config.json and skips finished steps.
 The manager window's Setup tab uses checklist() and the steps below.
 """
@@ -21,6 +25,7 @@ ROOT = Path(__file__).resolve().parent
 SERVER_DIR = ROOT / "server"
 MITM_DIR = SERVER_DIR / "mitm"
 LETTER_DIR = ROOT / "spotpass-letter"
+HELPER_DIR = ROOT / "helper"
 OTHER_DIR = ROOT / "other"
 CONFIG = SERVER_DIR / "config.json"
 CONFIG_EXAMPLE = SERVER_DIR / "config.example.json"
@@ -33,6 +38,8 @@ CLIENT_CERT = MITM_DIR / "mitmproxy-nintendo" / "client-certificates" / "CTR-com
 SPOTPASS_FILES = ["data_v131-2022-12-29-09-40-NA.enc", "playinfo_v131-2022-12-29-09-40-NA.enc", "allbadge_v131.dat.boss"]
 # Modules the server and the SpotPass tools import
 MODULES = ["Crypto", "nintendo", "anynet", "anyio", "OpenSSL", "multidict", "PIL"]
+# ...and the ones the Badges, Machine editor and Custom weeks tabs add
+HELPER_MODULES = ["numpy", "pymunk"]
 
 
 @dataclass
@@ -40,7 +47,7 @@ class Check:
 	name: str
 	ok: bool
 	hint: str  # what to do about it (or what it's for, once done)
-	fix: str | None = None  # "packages", "config" or "proxy": install.py can do it
+	fix: str | None = None  # "packages", "helper-packages", "config" or "proxy": install.py can do it
 	folder: Path | None = None  # where the user puts the file themselves
 
 
@@ -59,6 +66,26 @@ def install_packages() -> None:
 		subprocess.check_call(pip + ["--no-deps", "anynet~=1.2", "nintendoclients==5.0.0"])
 	else:
 		subprocess.check_call(pip + ["-r", str(SERVER_DIR / "requirements.txt")])
+
+
+def helper_packages_installed() -> bool:
+	return all(importlib.util.find_spec(module) for module in HELPER_MODULES)
+
+
+def install_helper_packages() -> None:
+	subprocess.check_call([sys.executable, "-m", "pip", "install", "--disable-pip-version-check",
+		"-r", str(HELPER_DIR / "requirements.txt")])
+
+
+def try_helper_packages() -> bool:
+	"""Installs the helper's packages; on failure only warns (see the top of this file)."""
+	try:
+		install_helper_packages()
+		return True
+	except (OSError, subprocess.CalledProcessError) as e:
+		print(f"Warning: couldn't install numpy and pymunk ({e}). The server works without them; the manager's "
+			"Setup tab offers to install them again for the Badges, Machine editor and Custom weeks tabs.")
+		return False
 
 
 def create_config() -> bool:
@@ -97,6 +124,9 @@ def checklist() -> list[Check]:
 	return [
 		Check("Python packages", packages_installed(),
 			"Installed." if packages_installed() else "Not installed yet.", "packages"),
+		Check("Packages for your own badges (numpy, pymunk)", helper_packages_installed(),
+			"Installed." if helper_packages_installed() else "Not installed yet. The Badges, Machine editor and Custom weeks "
+			"tabs need them.", "helper-packages"),
 		Check("Server settings (server/config.json)", CONFIG.exists(),
 			"Created." if CONFIG.exists() else "Not created yet.", "config"),
 		Check("Proxy (mitmproxy and Pretendo's 3DS files)", proxy_ready(),
@@ -135,10 +165,15 @@ def main() -> int:
 		if args.packages:
 			print("Installing the server's Python packages...")
 			install_packages()
+			print("Installing the packages for your own badges and machines...")
+			try_helper_packages()
 			return 0
 		if not packages_installed():
 			print("Installing the server's Python packages...")
 			install_packages()
+		if not helper_packages_installed():
+			print("Installing the packages for your own badges and machines...")
+			try_helper_packages()
 		if create_config():
 			print(f"Created {CONFIG.relative_to(ROOT)} with a random kerberos_password.")
 		if not proxy_ready():

@@ -1,6 +1,7 @@
 """update.py: version checks and installing a release zip, with no network."""
 
 from pathlib import Path
+import hashlib
 import io
 import json
 import sys
@@ -36,6 +37,23 @@ class FakeResponse(io.BytesIO):
 def test_this_version_is_valid():
 	assert update.VERSION_FILE.name == "version.txt"
 	update.parse_version(update.current_version())
+
+
+def test_version_file_for_the_first_updater():
+	"""Installs from 1.0.0 update from GitHub releases and need a VERSION file in the release."""
+	assert (update.ROOT / "VERSION").read_text(encoding="utf-8").strip() == update.current_version()
+
+
+@pytest.mark.parametrize("name, digest", [
+	("Setup.bat", "72cb8b6b7acfb2eb212249eba828b924b3f91407345a38c88fa060744e013433"),
+	("Badge Arcade Manager.bat", "a3e55a5cb850609c22cb6e9f88a2864a0400585ee7f211bed024831cf1d9dbe3"),
+])
+def test_batch_files_never_change(name: str, digest: str):
+	"""Setup.bat runs update.py, and Windows goes on reading a running .bat from the same byte
+	offset: if an update changed it, the rest would run from the middle of a line. Put anything
+	new in install.py or manager.py instead."""
+	content = (update.ROOT / name).read_bytes().replace(b"\r\n", b"\n")
+	assert hashlib.sha256(content).hexdigest() == digest
 
 
 def test_check(monkeypatch):
@@ -74,10 +92,13 @@ def test_is_protected():
 	patterns = update.PROTECTED + ["__pycache__/", "/spotpass-letter/out/"]
 	for path in ("server/config.json", "server/data/badge_arcade.db", "other/x.enc", "spotpass-letter/boot9.bin",
 			"spotpass-letter/badge_arcade_hmac.key", "server/mitm/.venv/bin/python", "manager_settings.json",
-			".git/config", "server/badge_arcade/__pycache__/x.pyc", "spotpass-letter/out/week.boss"):
+			".git/config", "server/badge_arcade/__pycache__/x.pyc", "spotpass-letter/out/week.boss",
+			"helper/workspace/badges/Pr_Cu_Star.png", "helper/workspace/workspace.json", "helper/helper_settings.json",
+			"helper/helper_state.json", "helper/extra/data.enc", "helper/other/allbadge.dat"):
 		assert update.is_protected(path, patterns), path
 	for path in ("manager.py", "server/config.example.json", "server/badge_arcade/server.py",
-			"spotpass-letter/out.py", "other.py", "version.txt"):
+			"spotpass-letter/out.py", "other.py", "version.txt", "VERSION", "helper/bahelper/workspace.py",
+			"helper/gui/app.py", "helper/requirements.txt"):
 		assert not update.is_protected(path, patterns), path
 
 

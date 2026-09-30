@@ -1,0 +1,4 @@
+# What the Badges, Machine editor and Custom weeks tabs add to the server's packages
+# (server/requirements.txt already has pycryptodome and Pillow). install.py installs these.
+numpy>=1.26
+pymunk>=6.6
