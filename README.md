@@ -132,12 +132,6 @@ open one of them, it reads the archived weeks (a minute or so, then it's
 cached). Everything you make is kept in `helper/workspace/`, which updates never
 touch. [helper/README.md](helper/README.md) explains each tab.
 
-**Coming from the standalone helper?** If its folder is next to this one (for
-example `badge-arcade-helper` beside `badge-arcade-server-full`), the manager
-offers to copy your badges, machines, weeks and settings the first time it
-opens. Otherwise use **Import from Badge Arcade Helper...** in the Setup tab.
-The old folder isn't changed; delete it once everything's here.
-
 ## Updating
 
 The installed version is in `version.txt` and the manager's title bar.
