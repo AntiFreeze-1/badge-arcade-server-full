@@ -295,7 +295,7 @@ it last served.
 | Path | What |
 |---|---|
 | `bahelper/` | Everything but the window: `boss.py` (containers), `sarc.py`, `yaz0.py`, `textures.py` (RGB565, A4, ETC1/ETC1A4), `formats.py` (the files above), `shapes.py`, `makers.py` (pictures to assets), `layout.py` (filling machines), `physics.py` (the physics check), `archive.py`, `workspace.py`, `week.py` (building weeks), `msbt.py` (Bunny's lines), `extras.py` (hall pictures, lines, gallery), `allbadge.py`, `titles.py` (programs a badge opens), `serving.py` (through the server), `importer.py` (from the standalone helper) |
-| `gui/` | The tabs, and their part of the Setup tab (`setup_tab.py`); `app.py` holds what they share |
+| `gui/` | The tabs, and their part of the Setup tab (`setup_tab.py`); `app.py` holds what they share, and the Machine editor's dialogs are in `machine_dialogs.py` |
 | `workspace/` | Your sets, badges, machines, weeks, pictures and caches (JSON + PNG); updates never touch it |
 | `helper_settings.json`, `helper_state.json` | The Setup tab's settings for these tabs, and the SpotPass count |
 | `tests/` | `python -m pytest tests` (the archive tests need boot9.bin and `other/`) |
