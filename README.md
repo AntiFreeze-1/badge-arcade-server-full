@@ -76,6 +76,7 @@ Your save database (`server/data/badge_arcade.db`) is created automatically.
 | **Free plays** | Give free plays. |
 | **Letters** | Send letters to the 3DS's Notifications (experimental). |
 | **Saves** | Back up, list and reset saves. |
+| **Stats** | How much each console has played: days played, streaks, and play per day over the last two weeks. |
 | **Maintenance** | Put the server into maintenance mode. |
 
 After serving a week or giving free plays, **fully close and reopen Badge Arcade.**

@@ -30,6 +30,7 @@ from manager_ui.serve_week_tab import ServeWeekTab
 from manager_ui.server_tab import ServerTab
 from manager_ui.services import Service
 from manager_ui.setup_tab import SetupTab
+from manager_ui.stats_tab import StatsTab
 from manager_ui.widgets import SIDEBAR_LINE, Sidebar, add_styles, app_icon
 
 # The tabs down the sidebar, under their headings
@@ -37,11 +38,12 @@ TABS = (
 	(None, ("Setup", "Server")),
 	("Play", ("Serve a week", "Free plays", "Letters")),
 	("Make your own", ("Badges", "Machine editor", "Custom weeks")),
-	("Admin", ("Saves", "Maintenance")),
+	("Admin", ("Saves", "Stats", "Maintenance")),
 )
 
 
-class Manager(SetupTab, ServerTab, ServeWeekTab, FreePlaysTab, LettersTab, HelperTabs, SavesTab, MaintenanceTab, tk.Tk):
+class Manager(SetupTab, ServerTab, ServeWeekTab, FreePlaysTab, LettersTab, HelperTabs, SavesTab, StatsTab, MaintenanceTab,
+		tk.Tk):
 	def __init__(self):
 		super().__init__()
 		self.title(f"{TITLE} {update.current_version()}")
@@ -97,7 +99,7 @@ class Manager(SetupTab, ServerTab, ServeWeekTab, FreePlaysTab, LettersTab, Helpe
 				self.sidebar.add(name)
 		builders = {"Setup": self.build_setup_tab, "Server": self.build_server_tab, "Serve a week": self.build_serve_week_tab,
 			"Free plays": self.build_free_plays_tab, "Letters": self.build_letters_tab, "Saves": self.build_saves_tab,
-			"Maintenance": self.build_maintenance_tab}
+			"Stats": self.build_stats_tab, "Maintenance": self.build_maintenance_tab}
 		self.pages: dict[str, ttk.Frame] = {}
 		for name in self.sidebar.names:
 			page = self.pages[name] = ttk.Frame(stack, padding=0 if name in HELPER_TABS else 12)  # the helper's tabs have their own
@@ -180,6 +182,8 @@ class Manager(SetupTab, ServerTab, ServeWeekTab, FreePlaysTab, LettersTab, Helpe
 			self.refresh_plays()
 		elif title == "Saves":
 			self.refresh_saves()
+		elif title == "Stats":
+			self.refresh_stats()
 		elif title == "Setup":
 			self.refresh_checklist()
 

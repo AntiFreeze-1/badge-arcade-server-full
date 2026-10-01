@@ -259,6 +259,7 @@ docker run -it --rm -p 8083:8083 -v "<full path to server>/mitm:/home/mitmproxy/
 
 ```sh
 python -m badge_arcade.admin saves          # list stored saves per PID
+python -m badge_arcade.admin stats          # days played, streaks and play reports per PID
 python -m badge_arcade.admin backup         # zip the database and save files into backups/
 python -m badge_arcade.admin reset <PID>    # back up, then forget that player's saves
 ```
@@ -359,7 +360,7 @@ with its parameters, which makes mismatches easy to spot.
 ```
 badge_arcade/
   __main__.py          entry point (python -m badge_arcade)
-  admin.py             save tools (python -m badge_arcade.admin)
+  admin.py             save tools and play stats (python -m badge_arcade.admin)
   server.py            wires the servers together
   config.py            config file loading
   storage.py           SQLite + file storage

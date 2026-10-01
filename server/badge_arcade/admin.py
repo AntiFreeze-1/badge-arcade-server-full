@@ -1,6 +1,7 @@
 """Save management for the Badge Arcade server.
 
   python -m badge_arcade.admin saves                 list the stored saves
+  python -m badge_arcade.admin stats                 how much each console has played
   python -m badge_arcade.admin backup [--output DIR] zip the database and save files
   python -m badge_arcade.admin reset PID [--yes]     back up, then forget a player's saves
   python -m badge_arcade.admin meta PID [--set 0x14=1]  show or edit FreePlayData fields
@@ -14,6 +15,8 @@ To restore a backup, stop the server, move the data directory aside and
 extract the zip in its place.
 """
 
+from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 import argparse
 import datetime
@@ -43,6 +46,70 @@ def format_saves(storage: Storage) -> str:
 			f"  data ID {obj['data_id']}: type {obj['data_type']}, {data}, "
 			f"meta {len(obj['meta_binary'])} bytes{slots}, updated {updated}"
 		)
+	return "\n".join(lines)
+
+
+@dataclass
+class PlayerStats:
+	"""One console's play, from the play reports Badge Arcade sends while it's played
+	(Shop.PostPlayLog; what's in them isn't known, so they're counted) and its saves."""
+	pid: int | None  # None: reports from before the server knew the console's PID
+	reports: int = 0
+	days: int = 0  # days with at least one report
+	streak: int = 0  # days in a row up to today (or yesterday, if not played yet today)
+	best_streak: int = 0
+	first: datetime.datetime | None = None
+	last: datetime.datetime | None = None
+	saves: int = 0  # save versions uploaded
+
+
+def play_stats(storage: Storage, today: datetime.date | None = None,
+		days: int = 14) -> tuple[list[PlayerStats], list[tuple[datetime.date, int]]]:
+	"""Each console's stats, the most recently played first, and the play reports of every
+	console per day for the last `days` days (oldest first). Days are in this PC's time zone."""
+	today = today or datetime.date.today()
+	players: dict[int | None, PlayerStats] = {}
+	played: dict[int | None, set[datetime.date]] = {}
+	per_day = Counter()
+	for pid, received in storage.play_log_times():
+		when = datetime.datetime.fromtimestamp(received)
+		player = players.setdefault(pid, PlayerStats(pid, first=when))
+		player.reports += 1
+		player.last = when
+		played.setdefault(pid, set()).add(when.date())
+		per_day[when.date()] += 1
+	for obj in storage.list_objects():
+		player = players.setdefault(obj["owner_id"], PlayerStats(obj["owner_id"]))
+		player.saves = max(player.saves, obj["version"])
+
+	for pid, dates in played.items():
+		player = players[pid]
+		player.days = len(dates)
+		run = 0
+		for day in sorted(dates):
+			run = run + 1 if day - datetime.timedelta(days=1) in dates else 1
+			player.best_streak = max(player.best_streak, run)
+		day = today if today in dates else today - datetime.timedelta(days=1)
+		while day in dates:
+			player.streak += 1
+			day -= datetime.timedelta(days=1)
+
+	order = sorted(players.values(), key=lambda p: p.last or datetime.datetime.min, reverse=True)
+	recent = [today - datetime.timedelta(days=n) for n in range(days - 1, -1, -1)]
+	return order, [(day, per_day[day]) for day in recent]
+
+
+def format_stats(storage: Storage, today: datetime.date | None = None) -> str:
+	players, recent = play_stats(storage, today)
+	if not players:
+		return "Nothing played yet."
+	when = lambda moment: f"{moment:%Y-%m-%d %H:%M}" if moment else "never"
+	lines = []
+	for p in players:
+		lines.append(f"PID {p.pid if p.pid is not None else 'unknown'}: played on {p.days} day(s), {p.reports} play report(s), "
+			f"streak {p.streak} (best {p.best_streak}), {p.saves} save(s) uploaded")
+		lines.append(f"  first played {when(p.first)}, last played {when(p.last)}")
+	lines.append(f"Play reports, last {len(recent)} days: " + " ".join(f"{day:%d}:{count}" for day, count in recent))
 	return "\n".join(lines)
 
 
@@ -89,6 +156,7 @@ def main(argv: list[str] | None = None) -> int:
 	parser.add_argument("--config", default="config.json", help="server config file (default: config.json)")
 	commands = parser.add_subparsers(dest="command", required=True)
 	commands.add_parser("saves", help="list the stored saves")
+	commands.add_parser("stats", help="how much each console has played")
 	backup_parser = commands.add_parser("backup", help="zip the database and save files")
 	backup_parser.add_argument("--output", type=Path, help="directory for the zip (default: backups/ next to the config)")
 	reset_parser = commands.add_parser("reset", help="back up, then forget a player's saves")
@@ -113,6 +181,9 @@ def main(argv: list[str] | None = None) -> int:
 	try:
 		if args.command == "saves":
 			print(format_saves(storage))
+
+		elif args.command == "stats":
+			print(format_stats(storage))
 
 		elif args.command == "backup":
 			print(f"Backup saved to {backup(config, storage, args.output)}")
