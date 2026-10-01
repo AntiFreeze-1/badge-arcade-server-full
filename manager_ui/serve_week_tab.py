@@ -9,6 +9,7 @@ import serve
 from custom_week import series as series_of
 
 from . import TITLE
+from .services import region_problem
 from .widgets import FONT, GOOD, hint, scrolled, set_text, stripe, text_box
 
 # Internal series codes -> names (from the badge files; a few are best guesses). The helper's
@@ -43,15 +44,17 @@ class ServeWeekTab:
 			"like Nintendo's weekly machines. It needs the game date to be the current date (Server tab).").pack(fill="x", pady=(4, 0))
 		body = ttk.Frame(tab)
 		body.pack(fill="both", expand=True, pady=8)
-		box, self.week_tree = scrolled(body, ttk.Treeview, columns=("dates", "machines", "rotation"), show="tree headings",
+		box, self.week_tree = scrolled(body, ttk.Treeview, columns=("dates", "machines", "region", "rotation"), show="tree headings",
 			selectmode="browse", height=12)
 		self.week_tree.heading("#0", text="Week", anchor="w")
 		self.week_tree.heading("dates", text="Original dates", anchor="w")
 		self.week_tree.heading("machines", text="Machines", anchor="e")
+		self.week_tree.heading("region", text="Made for", anchor="center")
 		self.week_tree.heading("rotation", text="Rotation", anchor="center")
 		self.week_tree.column("#0", width=360)
 		self.week_tree.column("dates", width=190)
 		self.week_tree.column("machines", width=80, anchor="e")
+		self.week_tree.column("region", width=80, anchor="center")
 		self.week_tree.column("rotation", width=90, anchor="center")
 		self.week_tree.tag_configure("live", foreground=GOOD, font=(FONT, 9, "bold"))
 		box.pack(side="left", fill="both", expand=True)
@@ -75,7 +78,8 @@ class ServeWeekTab:
 			self.week_tree.delete(*self.week_tree.get_children())
 			for index, week in enumerate(weeks):
 				dates = f"{week.start} to {week.end - datetime.timedelta(days=1)}" if week.start else ""
-				self.week_tree.insert("", "end", iid=str(index), text=week.label, values=(dates, week.machines, ""))
+				self.week_tree.insert("", "end", iid=str(index), text=week.label,
+					values=(dates, week.machines, "/".join(week.regions) or "?", ""))
 			self.mark_live_week()
 
 		self.background("Reading weeks...", lambda: serve.list_weeks(self.key), done)
@@ -107,7 +111,8 @@ class ServeWeekTab:
 			else "Leave out of rotation")
 		names = week.setups or serve.week_machine_names(week.path, self.key)
 		counts = Counter(series_of(n) for n in names)
-		text = [week.label + ("  (live now)" if week.label == self.live_week else ""), ""]
+		text = [week.label + ("  (live now)" if week.label == self.live_week else ""),
+			f"Made for the {'/'.join(week.regions) or '?'} Badge Arcade", ""]
 		text += [f"{series_name(code)}: {count}" for code, count in counts.most_common()]
 		set_text(self.week_details, "\n".join(text))
 
@@ -115,6 +120,9 @@ class ServeWeekTab:
 		week = self.selected_week()
 		if not week:
 			messagebox.showinfo(TITLE, "Pick a week first.")
+			return
+		problem = region_problem(self.console_region, week.regions)
+		if problem and not messagebox.askyesno(TITLE, f"{problem}\n\nServe it anyway?", icon="warning"):
 			return
 
 		def done(message):

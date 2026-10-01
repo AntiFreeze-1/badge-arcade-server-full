@@ -54,12 +54,26 @@ when you're done playing.
 The proxy's 3DS certificate and the NoSSL patch are downloaded from Pretendo
 Network by Setup.bat.
 
-**SpotPass files needed in `other/`** (US names; they also work with EUR games):
+**SpotPass files needed in `other/`** (the US Badge Arcade's; for the European one, see below):
 
 - `data_v131-2022-12-29-09-40-NA.enc` – a weekly machine set, used as the base for custom weeks
 - `playinfo_v131-2022-12-29-09-40-NA.enc` – that week's play settings, used for free plays
 - `allbadge_v131.dat.boss` – all badge graphics (required)
 - Any other `data_v131-*.enc` weeks (optional)
+
+**European (EUR) Badge Arcade:** each week carries Arcade Bunny's text and start-up scripts
+for one region, so the European game needs a European week (the server warns when a 3DS gets
+a week or badges made for another region). Add the European files too, from archive.org's
+[EUR SpotPass data](https://archive.org/download/3ds-boss-data/J6la9Kj8iqTvAPOq.zip/) (every
+country folder has the same files, e.g. `IT/it/data/`):
+
+- `data_v131.dat.boss`: save it as `other/data_v131-2022-11-18-EU.boss`. The new name
+  matters: `data_v131.dat.boss` is the week being served.
+- `allbadge_v131.dat.boss`: put it in place of the US one (keep that one somewhere else).
+
+Then serve "Nintendo, week of 2022-11-18" (made for EUR) in the **Serve a week** tab. Keep
+the US files above too: free plays are made from them. Custom weeks are built from US weeks,
+so for now they're made for the US game.
 
 Your save database (`server/data/badge_arcade.db`) is created automatically.
 
@@ -129,6 +143,10 @@ python update.py --apply --yes  # install it
   [server/README.md](server/README.md#each-session).
 - **"Could not save to the SD card" (EUR game):** add `boot9.bin` to
   `spotpass-letter/` and restart the game.
+- **"Hi. Sorry, but we're still doing some setup work. Come back later." (EUR game):**
+  the week being served is made for another region's Badge Arcade; the Server tab says
+  so. Serve a European week: see *European (EUR) Badge Arcade* under
+  [What you need to provide](#what-you-need-to-provide).
 - **Proxy stopped working after a restart:** your PC's IP may have changed. Check
   the Setup tab for the current one.
 

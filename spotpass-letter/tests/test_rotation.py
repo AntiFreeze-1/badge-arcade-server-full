@@ -19,9 +19,11 @@ DAY = datetime.timedelta(days=1)
 A, B, C = "data_v131-2022-12-08-09-40-NA.enc", "data_v131-2022-12-15-09-40-NA.enc", "data_v131-2022-12-22-09-40-NA.enc"
 
 
-def week_file(path: Path, start: datetime.date, machines: list[str], crashes: bool = False) -> Path:
+def week_file(path: Path, start: datetime.date, machines: list[str], crashes: bool = False,
+		program_id: int = make_letter.TITLE_IDS["USA"], text_for: str | None = None) -> Path:
 	"""A week of seven days from start, like Nintendo's, with these machine setups. With
-	crashes, its schedule has more machines than the game can take (serve_week refuses it)."""
+	crashes, its schedule has more machines than the game can take (serve_week refuses it).
+	With text_for, it has Arcade Bunny's text for that region, like Nintendo's weeks."""
 	end = start + 7 * DAY
 	prizes = (f"    <FileItem>\n      <DateStartText>{start:%Y%m%d}</DateStartText>\n      <DateExpireText>{end:%Y%m%d}"
 		"</DateExpireText>\n      <RegexSetName>PrizeCollection</RegexSetName>\n    </FileItem>\n")
@@ -30,8 +32,11 @@ def week_file(path: Path, start: datetime.date, machines: list[str], crashes: bo
 	if crashes:
 		xml = xml.replace("<Key>DefaultStageName000</Key>", "<Key>DefaultStageName1028</Key>")
 	setups = custom_week.sarc_write({f"pc/ci/{name}.cib.szs": b"setup" for name in machines}, 0x80)
-	payload = custom_week.sarc_write({"Schedule.xml": xml.encode(), f"sharc/{start:%y%m%d}-{end:%y%m%d}.sarc": setups}, 0x80)
-	plain = make_letter.build_container_plain(payload, 0x0004000000153500, 0x10001, 0x5C0, 1)
+	files = {"Schedule.xml": xml.encode(), f"sharc/{start:%y%m%d}-{end:%y%m%d}.sarc": setups}
+	if text_for:
+		files[f"message/boss_{text_for}/{text_for[:2]}en/boss/slotA00/StartUp.msbf"] = b"flow"
+	payload = custom_week.sarc_write(files, 0x80)
+	plain = make_letter.build_container_plain(payload, program_id, 0x10001, 0x5C0, 1)
 	path.write_bytes(make_letter.encrypt_container(KEY, plain, 1))
 	return path
 
@@ -145,3 +150,20 @@ def test_command_line(game, capsys, monkeypatch):
 	for missing in (["nope"], []):
 		monkeypatch.setattr(sys, "argv", ["serve.py", "rotation", "skip", *missing])
 		assert serve.main() == 1
+
+
+def test_weeks_know_which_region_they_are_for(game, tmp_path):
+	"""The server warns when a 3DS gets a week for another region (badge_arcade.boss_region);
+	the manager shows each week's region so the right one gets served."""
+	# Without Arcade Bunny's text, the region of the program a week is made out to
+	assert {week.regions for week in serve.list_weeks(KEY)} == {("USA",)}
+	week_file(tmp_path / "other" / "data_v131-2022-11-18-EU.boss", datetime.date(2022, 11, 18), ["E_1"],
+		program_id=make_letter.TITLE_IDS["EUR"], text_for="EUR")
+	week_file(tmp_path / "other" / A, datetime.date(2022, 12, 8), ["A_1", "A_2"], text_for="USA")
+	regions = {week.key: week.regions for week in serve.list_weeks(KEY)}
+	assert regions["data_v131-2022-11-18-EU.boss"] == ("EUR",) and regions[A] == ("USA",)
+
+	# Serving it (moved to the game date, under a new ID) keeps its text, and so its region
+	serve.serve_week(serve.find_week("data_v131-2022-11-18-EU.boss", KEY), KEY)
+	assert serve.week_regions(serve.LIVE_WEEK, KEY) == ("EUR",)
+	assert serve.container_info(serve.LIVE_WEEK, KEY)[0] == game["date"] - DAY

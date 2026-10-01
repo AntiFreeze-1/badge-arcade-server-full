@@ -19,6 +19,9 @@ SERVER_EVENTS = re.compile(r"Ready|Login from|SpotPass|ChangeMeta|meta changes|S
 PROXY_EVENTS = re.compile(r"Redirecting|Answering|Passing|listening|has PID|has NNID|does not trust|Traceback|Error|error")
 # The proxy addon logs the 3DS's PID (friends login) and NNID (account profile) when it sees them,
 # and forgets them when mitmproxy (re)loads it: at each start, and when the file changes
+# The server logs the region of the Badge Arcade asking for each SpotPass file: "SpotPass file
+# data_v131.dat.boss (EUR, 23919510 bytes)", "... (EUR) is already up to date", "... (EUR) not available"
+CONSOLE_REGION = re.compile(r"SpotPass file \S+ \((USA|EUR|JPN)[,)]")
 CONSOLE_EVENTS = re.compile(r"Console \S+ has PID (?P<pid>\d+)$|Console \S+ has NNID (?P<nnid>\S+ \(PID \d+\))$"
 	r"|(?P<reload>Loading script .*badge_arcade_redirect\.py)")
 
@@ -150,6 +153,25 @@ def end_process_group(pid: int, process: subprocess.Popen | None = None) -> None
 			if ended:
 				return
 			time.sleep(0.1)
+
+
+def console_region(lines, seen: str | None = None) -> str | None:
+	"""The region of the Badge Arcade that last downloaded a SpotPass file, from the server's log
+	lines ("Sent SpotPass file data_v131.dat.boss (EUR, 23919510 bytes)"), else seen."""
+	for line in lines:
+		match = CONSOLE_REGION.search(line)
+		if match:
+			seen = match.group(1)
+	return seen
+
+
+def region_problem(console: str | None, made_for) -> str:
+	"""What's wrong when the 3DS's Badge Arcade (console) gets a week made for other regions
+	(made_for), or "" when nothing is, or either isn't known."""
+	if not console or not made_for or console in made_for:
+		return ""
+	return (f"Your 3DS runs the {console} Badge Arcade, but this week is made for {'/'.join(made_for)}, so the game "
+		f"will stop at \"we're still doing some setup work\". Serve a week made for {console} (README.md, Troubleshooting).")
 
 
 def console_ids(lines, seen: dict | None = None) -> dict[str, str | None]:

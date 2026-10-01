@@ -91,3 +91,22 @@ def free_port() -> int:
 	with socket.socket() as s:
 		s.bind(("127.0.0.1", 0))
 		return s.getsockname()[1]
+
+
+def test_console_region_and_problem():
+	"""The manager learns which region's Badge Arcade the 3DS runs from the server's log, and says
+	when the live week was made for another one (see badge_arcade.boss_region)."""
+	from manager_ui.services import console_region, region_problem
+	log = ["2026-10-01 20:05:26,447 [INFO] badge_arcade.boss_region: Made SpotPass file playinfo_v131.dat.boss out to "
+		"Badge Arcade EUR (0004000000153600)",
+		"2026-10-01 20:05:26,448 [INFO] badge_arcade.http_server: Sent SpotPass file playinfo_v131.dat.boss (EUR, 1472 bytes)",
+		"2026-10-01 20:05:33,776 [WARNING] badge_arcade.boss_region: SpotPass file data_v131.dat.boss is a week made for "
+		"the USA Badge Arcade, but this 3DS runs the EUR one. (README.md, Troubleshooting)"]
+	assert console_region(log) == "EUR"
+	assert console_region(["SpotPass file data_v131.dat.boss (USA) is already up to date on the console"], "EUR") == "USA"
+	assert console_region(["SpotPass file news.dat (unknown region x) not available"], "EUR") == "EUR"
+	assert console_region([]) is None
+
+	problem = region_problem("EUR", ("USA",))
+	assert "runs the EUR Badge Arcade, but this week is made for USA" in problem and "setup work" in problem
+	assert region_problem("EUR", ("EUR",)) == region_problem("EUR", ()) == region_problem(None, ("USA",)) == ""

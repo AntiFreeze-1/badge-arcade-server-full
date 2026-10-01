@@ -384,6 +384,8 @@ class RequestHandler(BaseHTTPRequestHandler):
 			self.send_body(404, b"Not found", head=head)
 			return
 
+		# Weeks and badges made for another region don't work on this 3DS: say so in the log
+		self.boss.regions.check(file, region)
 		# The archived files are made out to the USA Badge Arcade: other regions' consoles
 		# can only save them with their own title ID in them
 		content = self.boss.regions.convert(file, region)
