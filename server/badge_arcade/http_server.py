@@ -22,6 +22,7 @@ import shutil
 import string
 import threading
 
+from .boss_region import RegionConverter
 from .config import Config
 from .storage import Storage
 
@@ -73,8 +74,9 @@ def parse_multipart(content_type: str, body: bytes) -> dict[str, bytes]:
 
 
 class BossFiles:
-	def __init__(self, directory: Path | None):
+	def __init__(self, directory: Path | None, key_path: Path | None = None):
 		self.directory = directory
+		self.regions = RegionConverter(key_path)
 
 	def index(self) -> dict[str, Path]:
 		if self.directory is None or not self.directory.is_dir():
@@ -123,10 +125,13 @@ class RequestHandler(BaseHTTPRequestHandler):
 				return False
 		return False
 
-	def send_file(self, path: Path, head: bool):
+	def send_file(self, path: Path, head: bool, content: bytes | None = None, tag: str = ""):
+		"""Sends the file, or content in its place (with tag in its ETag). False when the
+		client already has it."""
 		stat = path.stat()
 		mtime = int(stat.st_mtime)
-		etag = f'"{mtime:x}-{stat.st_size:x}"'
+		size = stat.st_size if content is None else len(content)
+		etag = f'"{mtime:x}-{size:x}{tag}"'
 
 		if self.is_cached_by_client(etag, mtime):
 			self.send_response(304)
@@ -136,11 +141,13 @@ class RequestHandler(BaseHTTPRequestHandler):
 
 		self.send_response(200)
 		self.send_header("Content-Type", "binary/octet-stream")
-		self.send_header("Content-Length", str(stat.st_size))
+		self.send_header("Content-Length", str(size))
 		self.send_header("ETag", etag)
 		self.send_header("Last-Modified", email.utils.formatdate(mtime, usegmt=True))
 		self.end_headers()
-		if not head:
+		if not head and content is not None:
+			self.wfile.write(content)
+		elif not head:
 			with open(path, "rb") as f:
 				shutil.copyfileobj(f, self.wfile)
 		return True
@@ -377,7 +384,10 @@ class RequestHandler(BaseHTTPRequestHandler):
 			self.send_body(404, b"Not found", head=head)
 			return
 
-		if self.send_file(file, head):
+		# The archived files are made out to the USA Badge Arcade: other regions' consoles
+		# can only save them with their own title ID in them
+		content = self.boss.regions.convert(file, region)
+		if self.send_file(file, head, content, f"-{region.lower()}" if content is not None else ""):
 			logger.info("Sent SpotPass file %s (%s, %i bytes)", file.name, region, file.stat().st_size)
 		else:
 			logger.info("SpotPass file %s (%s) is already up to date on the console", file.name, region)
@@ -387,7 +397,7 @@ def start_http_server(config: Config, storage: Storage) -> ThreadingHTTPServer:
 	handler = type("Handler", (RequestHandler,), {
 		"config": config,
 		"storage": storage,
-		"boss": BossFiles(config.boss_path),
+		"boss": BossFiles(config.boss_path, config.boss_key_path),
 	})
 	server = ThreadingHTTPServer((config.bind_host, config.http_port), handler)
 	server.daemon_threads = True

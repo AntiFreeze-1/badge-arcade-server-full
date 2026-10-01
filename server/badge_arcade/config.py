@@ -68,6 +68,9 @@ class Config:
 
 	data_dir: str = "data"
 	boss_dir: str | None = "../other"
+	# boot9.bin (or the SpotPass key), for converting SpotPass files made for another
+	# region's Badge Arcade (the archived files are the USA ones) for the console's own
+	boss_key_file: str | None = "../spotpass-letter/boot9.bin"
 
 	# Mapping of PID -> NEX password (or a 32-hex-digit Kerberos key derived
 	# from it).
@@ -140,6 +143,10 @@ class Config:
 	@property
 	def boss_path(self) -> Path | None:
 		return self.resolve(self.boss_dir) if self.boss_dir else None
+
+	@property
+	def boss_key_path(self) -> Path | None:
+		return self.resolve(self.boss_key_file) if self.boss_key_file else None
 
 	@property
 	def nex_keys_path(self) -> Path | None:
