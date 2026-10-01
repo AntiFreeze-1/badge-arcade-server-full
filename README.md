@@ -92,7 +92,8 @@ python serve.py free-plays --plays 2
 
 The manager checks for updates daily and shows **Update now** on the Setup tab.
 Updates never touch your config, saves, SpotPass files or keys, and old files are
-backed up to `backups/` first.
+backed up to `backups/` first. If a file can't be replaced (another program has it
+open), the update puts the previous version back and says which file it was.
 
 From the command line (stop the server first):
 
@@ -100,15 +101,17 @@ From the command line (stop the server first):
 python update.py --check        # check for an update
 python update.py --apply --yes  # install it
 ```
-**Notice:** Sometimes, after an update, your copy of the server may throw some errors. If this does
-occur, please redownload the repository, and copy the new files into the same directory as the old 
-ones, overwriting any files that do exist.
 
 > Contributors: see [CONTRIBUTING.md](CONTRIBUTING.md) for how releases and
 > versioning work.
 
 ## Troubleshooting
 
+- **An update failed, or errors appear after one:** close the manager and anything
+  else that has files in the project folder open, then update again. If the manager
+  won't open at all, download the project from GitHub (*Code → Download ZIP*) and copy
+  its files over your folder. Your config, saves, SpotPass files and keys aren't in the
+  download, so they're kept.
 - **3DS can't see the hotspot:** it's probably on 5 GHz. Use proxy mode instead.
 - **Connection test fails on the hotspot:** check the Setup tab for a DNS warning
   and confirm the NoSSL patch and game patching are on. Otherwise use proxy mode.

@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Troubleshooting
+    url: https://github.com/AntiFreeze-1/badge-arcade-server-full#troubleshooting
+    about: Answers to the most common setup and connection problems.

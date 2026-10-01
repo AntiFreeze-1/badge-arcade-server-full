@@ -1,0 +1,11 @@
+# Keeps the GitHub Actions the workflows use up to date. The Python packages aren't
+# included: their versions are pinned on purpose (see the requirements files)
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
