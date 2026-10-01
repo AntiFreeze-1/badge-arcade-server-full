@@ -109,7 +109,7 @@ def main() -> int:
 	args.output.write_bytes(out)
 
 	print(f"{args.input.name} -> {args.output} (NsData ID {args.ns_data_id:#x})")
-	for cid, kind, begin, end, plays in daily_campaigns(check):
+	for cid, _kind, begin, end, plays in daily_campaigns(check):
 		when = lambda t: datetime.datetime.fromtimestamp(t, datetime.UTC).strftime("%Y-%m-%d %H:%M")
 		print(f"  campaign {cid}: {plays} free plays, {when(begin)} -> {when(end)} UTC")
 	return 0

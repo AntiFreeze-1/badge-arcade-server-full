@@ -288,9 +288,7 @@ async def run_all(prudp_version: int) -> None:
 
 			# SpotPass files are matched by name, with or without ".boss"
 			for name in ("playinfo_v131.dat", "playinfo_v131.dat.boss"):
-				status, data = await anyio.to_thread.run_sync(
-					lambda: http(f"{config.http_base_url}/boss/p01/nsa/xyz/task/{name}")
-				)
+				status, data = await anyio.to_thread.run_sync(http, f"{config.http_base_url}/boss/p01/nsa/xyz/task/{name}")
 				assert status == 200 and data.startswith(b"boss")
 
 			await run_flow(config, prudp_version, PID, PASSWORD)
@@ -385,10 +383,10 @@ async def run_extras() -> None:
 			pid_of = lambda xml: dict(re.findall(r"<(\w+)>([^<]*)</\1>", xml))["pid"]
 			other_pid = TOKEN_PID + 1
 			for pid, ip in ((TOKEN_PID, "192.168.0.20"), (other_pid, "192.168.0.21")):
-				status, _ = await anyio.to_thread.run_sync(lambda: nex_token(str(pid), ip))
+				status, _ = await anyio.to_thread.run_sync(nex_token, str(pid), ip)
 				assert status == 200
 			for ip, expected in (("192.168.0.20", TOKEN_PID), ("192.168.0.21", other_pid), ("192.168.0.99", other_pid)):
-				status, xml_ip = await anyio.to_thread.run_sync(lambda: nex_token("", ip))
+				status, xml_ip = await anyio.to_thread.run_sync(nex_token, "", ip)
 				assert status == 200 and pid_of(xml_ip) == str(expected), (ip, xml_ip)
 
 			# Unknown account: a successful call with InvalidUsername in the result
@@ -402,7 +400,7 @@ async def run_extras() -> None:
 			status, headers, body = await anyio.to_thread.run_sync(lambda: http_request(url))
 			assert status == 200 and len(body) == 1004
 			for conditional in ({"If-None-Match": headers["ETag"]}, {"If-Modified-Since": headers["Last-Modified"]}):
-				status, _, body = await anyio.to_thread.run_sync(lambda: http_request(url, conditional))
+				status, _, body = await anyio.to_thread.run_sync(http_request, url, conditional)
 				assert status == 304 and body == b""
 			status, _, _ = await anyio.to_thread.run_sync(lambda: http_request(url, {"If-None-Match": '"other"'}))
 			assert status == 200

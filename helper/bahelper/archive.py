@@ -323,7 +323,7 @@ class Archive:
 		for c in self.categories.values():
 			books.setdefault(struct.unpack_from("<I", c.numbers, 8)[0], []).append(c)
 		out = []
-		for book, cats in sorted(books.items()):
+		for _book, cats in sorted(books.items()):
 			if any(c.name in have for c in cats):
 				continue
 			title = next((c.titles[1] or c.titles[0] for c in cats if c.titles[0]), cats[0].name).replace("\n", " ")

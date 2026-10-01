@@ -121,7 +121,7 @@ def fill(machine: f.Machine, names: list[str], mode: str, object_shapes, templat
 			notes.append("The grid didn't fit around the obstacles, so the badges were scattered instead.")
 	if len(positions) < len(queue):
 		# scatter: at the chosen size if they all find room, else a bit smaller each try
-		for attempt in range(8):
+		for attempt in range(8):  # noqa: B007 (read after the loop)
 			found = _scatter(machine, len(queue) - len(positions), size, positions, obstacles, template, rng)
 			if found is not None:
 				positions += found

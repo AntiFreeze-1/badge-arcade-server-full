@@ -151,7 +151,7 @@ class AuthenticationServer(authentication.AuthenticationServer):
 		try:
 			return int(username)
 		except ValueError:
-			raise common.RMCError("RendezVous::InvalidUsername")
+			raise common.RMCError("RendezVous::InvalidUsername") from None
 
 	async def get_name(self, client, pid):
 		return str(pid)

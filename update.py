@@ -10,7 +10,8 @@ an update. A git checkout is updated with "git pull --ff-only"; otherwise the
 main branch's files are downloaded and copied over this folder. Your own files are never touched: server/config.json, saves
 (server/data/), SpotPass files (other/), keys and dumps, the manager's
 settings, and anything else .gitignore lists. The files an update replaces are
-zipped into backups/ first. Stop the server and proxy before updating.
+zipped into backups/ first, and if one of them can't be replaced, the update puts the
+previous version back. Stop the server and proxy before updating.
 
 Older installs update with the update.py they have, so the project keeps what those
 need: version.txt (from 1.0.1 on), and a VERSION file with a GitHub release of the same
@@ -37,6 +38,7 @@ import sys
 import urllib.error
 import urllib.request
 import zipfile
+import zlib
 
 ROOT = Path(__file__).resolve().parent
 VERSION_NAME = "version.txt"
@@ -50,6 +52,9 @@ CHANGES_URL = f"https://github.com/{REPOSITORY}/commits/{BRANCH}"
 BACKUP_DIR = ROOT / "backups"
 # Files installed by the last zip update, so the next one can remove files a new version dropped
 MANIFEST = ROOT / ".update-manifest.json"
+# While an update installs, each new file is unpacked next to the one it replaces with this
+# added to its name, and the old one is kept aside with the other until the update is done
+STAGED, OLD = ".update-tmp", ".update-old"
 
 UP_TO_DATE, UPDATE_AVAILABLE, ERROR = 0, 10, 1
 
@@ -246,24 +251,84 @@ def install_zip(data: bytes, root: Path = ROOT, backup_dir: Path | None = None, 
 		replaced = [path for path in [*files, *removed] if (root / path).is_file()]
 		backup = None
 		if replaced:
-			backup_dir.mkdir(parents=True, exist_ok=True)
 			backup = backup_dir / f"before-update-{datetime.datetime.now():%Y%m%d-%H%M%S}.zip"
-			with zipfile.ZipFile(backup, "w", zipfile.ZIP_DEFLATED) as out:
-				for path in replaced:
-					out.write(root / path, path)
+			try:
+				backup_dir.mkdir(parents=True, exist_ok=True)
+				with zipfile.ZipFile(backup, "w", zipfile.ZIP_DEFLATED) as out:
+					for path in replaced:
+						out.write(root / path, path)
+			except OSError as e:
+				discard([backup])
+				raise UpdateError(f"couldn't back up the files the update replaces ({e}); nothing was changed") from e
 
-		for path, info in files.items():
-			target = root / path
-			target.parent.mkdir(parents=True, exist_ok=True)
-			tmp = target.with_name(target.name + ".update-tmp")
-			with archive.open(info) as source, open(tmp, "wb") as dest:
-				shutil.copyfileobj(source, dest)
-			tmp.replace(target)
-		for path in removed:
-			(root / path).unlink(missing_ok=True)
+		# Unpack every file next to the one it replaces before changing anything, so a broken
+		# download or a full disk leaves the install as it was
+		staged = {}
+		try:
+			for path, info in files.items():
+				target = root / path
+				target.parent.mkdir(parents=True, exist_ok=True)
+				staged[path] = target.with_name(target.name + STAGED)
+				with archive.open(info) as source, open(staged[path], "wb") as dest:
+					shutil.copyfileobj(source, dest)
+		except (OSError, EOFError, zipfile.BadZipFile, zlib.error) as e:
+			discard(staged.values())
+			raise UpdateError(f"couldn't unpack {path} ({e}); nothing was changed") from e
+
+		# Then swap them in, version.txt last: until it changes, the manager still offers the update.
+		# The old files are kept aside until all the new ones are in, so if one can't be replaced
+		# (on Windows, a virus scanner or another program can hold it open) the old version is put
+		# back instead of leaving a mix of both.
+		moved = []  # (file, its old copy or None if it's new), in the order they changed
+		try:
+			for path in sorted([*files, *removed], key=lambda name: name == VERSION_NAME):
+				target = root / path
+				if target.is_file():
+					old = target.with_name(target.name + OLD)
+					target.replace(old)
+					moved.append((target, old))
+				elif path not in files:
+					continue  # dropped by the new version, and already gone
+				elif not target.exists():
+					moved.append((target, None))
+				if path in staged:
+					staged[path].replace(target)
+		except OSError as e:
+			stuck = put_back(moved)
+			discard(staged.values())
+			if stuck:
+				raise UpdateError(f"couldn't replace {path} ({e}), and couldn't put back {', '.join(map(str, stuck))}. "
+					f"Copy them from {backup}, or download the project again") from e
+			raise UpdateError(f"couldn't replace {path} ({e}); the previous version was put back. "
+				"Close any program that has the project's files open, then try again") from e
+		discard(old for _, old in moved if old)
 
 	(root / MANIFEST.name).write_text(json.dumps(sorted(files), indent="\t") + "\n", encoding="utf-8")
 	return backup
+
+
+def put_back(moved: list[tuple[Path, Path | None]]) -> list[Path]:
+	"""Undoes a part-done swap: the old copies go back and the new files go. Returns the
+	files it couldn't put back."""
+	stuck = []
+	for target, old in reversed(moved):
+		try:
+			if old:
+				old.replace(target)
+			else:
+				target.unlink(missing_ok=True)
+		except OSError:
+			stuck.append(target)
+	return stuck
+
+
+def discard(paths) -> None:
+	"""Removes leftover files, as far as it can: one that stays behind does no harm."""
+	for path in paths:
+		try:
+			path.unlink(missing_ok=True)
+		except OSError:
+			pass
 
 
 def install_packages() -> None:
