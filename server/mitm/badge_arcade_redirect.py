@@ -31,6 +31,7 @@ import time
 import urllib.error
 import urllib.request
 from urllib.parse import parse_qsl, urlencode
+from xml.etree import ElementTree
 
 import mitmproxy_rs
 from mitmproxy import ctx, http
@@ -40,6 +41,7 @@ from mitmproxy.proxy import mode_specs, server_hooks
 from nintendo_hosts import ACCOUNT_HOSTS, HANDLED_HOSTS, NASC_HOSTS, NPDL_HOSTS, NPPL_HOSTS
 
 NEX_TOKEN_PATH = "/v1/api/provider/nex_token/"
+PROFILE_PATH = "/v1/api/people/@me/profile"
 
 # Badge Arcade's SpotPass tasks (from Pretendo's BOSS server)
 BADGE_ARCADE_TASKS = [
@@ -113,7 +115,7 @@ class BadgeArcadeRedirect:
 	def __init__(self):
 		self._boss_files: set[str] = set()
 		self._boss_checked = 0.0
-		# Console IP -> NEX PID, from the friends system's NASC login
+		# Console IP -> PID, from the friends system's NASC login or the NNID profile
 		self._console_pids: dict[str, str] = {}
 		self._resolver = None
 
@@ -161,7 +163,25 @@ class BadgeArcadeRedirect:
 		form = dict(parse_qsl(flow.request.get_text(strict=False) or ""))
 		pid = nasc_decode(form.get("userid", ""))
 		if pid.isdigit():
-			self._console_pids[flow.client_conn.peername[0]] = pid
+			ip = flow.client_conn.peername[0]
+			self._console_pids[ip] = pid
+			# The manager's Server tab reads these lines (manager_ui/services.py)
+			logger.info("Console %s has PID %s", ip, pid)
+
+	def remember_profile_pid(self, flow: http.HTTPFlow) -> None:
+		"""The NNID profile reply has the PID Badge Arcade logs in with. The
+		console fetches it just before the NEX token request, so this also works
+		when the proxy missed the friends login (which only happens on connecting)."""
+		try:
+			root = ElementTree.fromstring(flow.response.get_content(strict=False) or b"")
+		except ElementTree.ParseError:
+			return
+		pid = root.findtext("pid", "").strip()
+		if pid.isdigit():
+			ip = flow.client_conn.peername[0]
+			self._console_pids[ip] = pid
+			nnid = root.findtext("user_id", "").strip() or "(no name)"
+			logger.info("Console %s has NNID %s (PID %s)", ip, nnid, pid)
 
 	def answer_nex_token(self, flow: http.HTTPFlow) -> None:
 		"""Badge Arcade gets its game server address and NEX password from the
@@ -256,6 +276,12 @@ class BadgeArcadeRedirect:
 				for key, value in reply.items() if key in ("returncd", "retry", "locator", "datetime")
 			}
 			logger.info("NASC %s answered: %s", flow.request.pretty_host, fields)
+
+		if (
+			flow.request.pretty_host in ACCOUNT_HOSTS and flow.request.path.startswith(PROFILE_PATH)
+			and flow.response is not None and flow.response.status_code == 200
+		):
+			self.remember_profile_pid(flow)
 
 	async def server_connect(self, data: server_hooks.ServerConnectionHookData) -> None:
 		"""Hotspot mode: the hosts file points the handled hosts at this PC, so

@@ -15,7 +15,11 @@ from . import LOG_DIR, PID_FILE, SERVER_DIR
 
 SERVER_EVENTS = re.compile(r"Ready|Login from|SpotPass|ChangeMeta|meta changes|Sent data ID|disconnected|ERROR|Traceback|Error")
 # "does not trust": the 3DS rejected the proxy's certificate, i.e. the NoSSL patch isn't active
-PROXY_EVENTS = re.compile(r"Redirecting|Answering|Passing|listening|does not trust|Traceback|Error|error")
+PROXY_EVENTS = re.compile(r"Redirecting|Answering|Passing|listening|has PID|has NNID|does not trust|Traceback|Error|error")
+# The proxy addon logs the 3DS's PID (friends login) and NNID (account profile) when it sees them,
+# and forgets them when mitmproxy (re)loads it: at each start, and when the file changes
+CONSOLE_EVENTS = re.compile(r"Console \S+ has PID (?P<pid>\d+)$|Console \S+ has NNID (?P<nnid>\S+ \(PID \d+\))$"
+	r"|(?P<reload>Loading script .*badge_arcade_redirect\.py)")
 
 
 class Service:
@@ -115,6 +119,22 @@ def is_python(pid: int) -> bool:
 	result = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"], capture_output=True, text=True,
 		creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 	return "python" in result.stdout.lower()
+
+
+def console_ids(lines, seen: dict | None = None) -> dict[str, str | None]:
+	"""The PID and NNID the running proxy knows for the 3DS (the newest ones), from its log lines
+	after `seen`, the result for the lines before them."""
+	seen = dict(seen or {"pid": None, "nnid": None})
+	for line in lines:
+		match = CONSOLE_EVENTS.search(line.rstrip())
+		if match is None:
+			continue
+		if match["reload"]:
+			seen = {"pid": None, "nnid": None}
+		else:
+			key = "pid" if match["pid"] else "nnid"
+			seen[key] = match[key]
+	return seen
 
 
 def tidy(line: str) -> str:

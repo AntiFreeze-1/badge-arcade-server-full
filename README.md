@@ -114,7 +114,7 @@ current date as days pass.
 | Tab | What it does |
 |---|---|
 | **Setup** | The checklist of what's installed and provided, where your own badges' files are, connecting the 3DS (hotspot or proxy), and updates. |
-| **Server** | Start and stop the server and proxy, set the game date, see what the 3DS gets next, and watch logins, SpotPass downloads and saves as they happen. |
+| **Server** | Start and stop the server and proxy, see whether the proxy has seen the 3DS's PID and NNID (until the server has working ones from an earlier session), set the game date, see what the 3DS gets next, and watch logins, SpotPass downloads and saves as they happen. |
 | **Serve a week** | Every archived Nintendo week and your custom weeks; pick one and press *Serve*. |
 | **Build a week** | Pick machine setups from every archived week (by series or one by one, with their badges listed) and build your own week. |
 | **Badges** | Make your own badges from pictures, in sets that get their own page in the badge collection. |
@@ -195,6 +195,11 @@ stay as they are for older versions:
 - **The hosts file still has the Badge Arcade block** (for example after the
   PC restarted with the hotspot on). The manager offers to remove it when it
   starts, or run `python server/mitm/hotspot.py off`.
+- **Error 022-2534 when Badge Arcade starts.** The server didn't know which
+  3DS was logging in. The proxy learns the console's PID when the 3DS goes
+  online and its NNID when Badge Arcade signs in, and needs one of them; the
+  Server tab shows which ones it has seen. Close Badge Arcade, reconnect the
+  3DS to the internet while the proxy is running, and open it again.
 - **"This service is not available in your region"** straight away: see
   *Region-changed consoles* in [server/README.md](server/README.md#each-session).
 - **Proxy mode stopped working after a restart.** The PC's IP address can

@@ -6,6 +6,7 @@
 
 import asyncio
 import base64
+import logging
 import sys
 import time
 from pathlib import Path
@@ -111,11 +112,19 @@ def main() -> None:
 		# by the server, using the PID from the friends system's NASC login
 		calls = []
 		addon.request_nex_token = lambda pid, title, game, ip="": calls.append((pid, title, game)) or (200, b"<nex_token/>")
+		# The manager's Server tab shows the PID and NNID from these log lines (see test_manager.py)
+		messages = []
+		handler = logging.Handler()
+		handler.emit = lambda record: messages.append(record.getMessage())
+		badge_arcade_redirect.logger.addHandler(handler)
+		badge_arcade_redirect.logger.setLevel(logging.INFO)
 
 		friends_login = nasc_flow("nasc.nintendowifi.net", "0004013000003202", "00003200")
 		friends_login.request.content += f"&userid={nasc_encode('1234567890')}".encode()
 		addon.request(friends_login)
 		assert friends_login.request.host == "nasc.nintendowifi.net"  # still passed through
+		ip = friends_login.client_conn.peername[0]
+		assert f"Console {ip} has PID 1234567890" in messages, messages
 
 		flow = get_flow("https://account.nintendo.net/v1/api/provider/nex_token/@me?game_server_id=00134600")
 		flow.request.headers["X-Nintendo-Title-ID"] = "0004000000153500"
@@ -134,6 +143,36 @@ def main() -> None:
 		flow.request.headers["X-Nintendo-Title-ID"] = "0004000000153500"
 		addon.request(flow)
 		assert len(calls) == 2 and flow.response is not None and flow.response.status_code == 200
+
+		# A console whose friends login the proxy missed: the PID comes from the
+		# NNID profile reply, which the console fetches before the NEX token
+		def console_flow(url: str) -> http.HTTPFlow:
+			flow = get_flow(url)
+			flow.client_conn.peername = ("192.168.137.145", 55704)
+			return flow
+
+		profile = console_flow("https://account.nintendo.net/v1/api/people/@me/profile")
+		addon.request(profile)
+		assert profile.response is None  # passed through
+		profile.response = http.Response.make(200, (
+			b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><person><accounts><account>'
+			b"<domain>ESHOP.NINTENDO.NET</domain></account></accounts><mii><id>99</id></mii>"
+			b"<pid>1737455655</pid><user_id>MyNNID</user_id></person>"
+		), {"Content-Type": "application/xml;charset=UTF-8"})
+		addon.response(profile)
+		assert messages[-1] == "Console 192.168.137.145 has NNID MyNNID (PID 1737455655)", messages[-1]
+
+		flow = console_flow("https://account.nintendo.net/v1/api/provider/nex_token/@me?game_server_id=00134600")
+		flow.request.headers["X-Nintendo-Title-ID"] = "0004000000153500"
+		addon.request(flow)
+		assert calls[-1] == ("1737455655", "0004000000153500", "00134600"), calls[-1]
+
+		# A reply that isn't a profile changes nothing
+		profile = console_flow("https://account.nintendo.net/v1/api/people/@me/profile")
+		profile.response = http.Response.make(200, b"<html>Service unavailable", {})
+		count = len(messages)
+		addon.response(profile)
+		assert addon._console_pids["192.168.137.145"] == "1737455655" and len(messages) == count
 
 		# SpotPass policy list: answered locally so Badge Arcade's tasks may run (also Pretendo's)
 		flow = get_flow("https://nppl.c.app.pretendo.cc/p01/policylist/3/US")

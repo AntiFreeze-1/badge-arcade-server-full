@@ -297,8 +297,10 @@ and derived keys), rejecting unknown accounts, and the save tools, including
 a fresh first-time setup after `reset`. `tests/test_hotspot.py` covers the
 hotspot mode's hosts-file editing and DNS check, and `--public-host`.
 `tests/test_units.py` covers the save tools' FreePlayData helpers, cleaning up
-unfinished uploads and the HTTP server's request size limit, and
-`tests/test_update.py` covers `update.py` (without the network).
+unfinished uploads and the HTTP server's request size limit,
+`tests/test_update.py` covers `update.py` (without the network), and
+`tests/test_manager.py` covers how the manager reads the 3DS's PID and NNID
+from the proxy's log.
 `spotpass-letter/tests/` covers the SpotPass container, free plays and SARC
 code with throwaway keys and made-up data.
 

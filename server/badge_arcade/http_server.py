@@ -282,22 +282,16 @@ class RequestHandler(BaseHTTPRequestHandler):
 		if pid is not None and ip:
 			self.storage.remember_console_pid(ip, pid)
 		if pid is None:
-			# The addon learns the PID from the console's friends login. If it
-			# missed that (e.g. the proxy restarted), use the PID this console's
-			# IP had before, then the most recent console, then the only one known.
-			pid = self.storage.console_pid(ip) if ip else None
-			if pid is None:
-				pid = self.storage.console_pid()
-			if pid is None:
-				known = self.storage.nex_account_pids("nex_token")
-				pid = known[0] if len(known) == 1 else None
+			# The addon learns the PID from the console's friends login or NNID
+			# profile. If it missed both (e.g. the proxy restarted), use one from before.
+			pid = self.storage.fallback_pid(ip)
 			if pid is not None:
 				logger.info("NEX token request without a PID from the proxy; using PID %i from an earlier login", pid)
 
 		if pid is None:
 			logger.error(
-				"NEX token request (game server %s) without a known PID. Reconnect the 3DS to "
-				"the internet while the proxy is running so it sees the friends login.", game_server_id
+				"NEX token request (game server %s) without a known PID. Close Badge Arcade, "
+				"reconnect the 3DS to the internet while the proxy is running, and open it again.", game_server_id
 			)
 			self.send_body(404, (
 				'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'

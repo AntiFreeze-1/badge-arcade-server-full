@@ -1,5 +1,6 @@
 """Unit tests for pieces that don't need the NEX servers: the save tools'
-FreePlayData helpers, stale upload cleanup and HTTP request limits."""
+FreePlayData helpers, stale upload cleanup, the consoles the database knows,
+and HTTP request limits."""
 
 from pathlib import Path
 import http.client
@@ -48,6 +49,37 @@ def test_prune_uploads(tmp_path: Path):
 		assert storage.get_upload("stale") is None and storage.get_upload("fresh") is not None
 		assert not storage.object_file(data_id, 2).exists()
 		assert storage.object_file(data_id, 1).read_bytes() == b"abc"  # the current save is kept
+	finally:
+		storage.close()
+
+
+def test_known_console(tmp_path: Path):
+	"""What the server falls back on when the proxy misses the 3DS's PID, and the NNIDs with a
+	save: the manager hides its PID and NNID rows when these find one."""
+	storage = Storage(tmp_path)
+	try:
+		assert storage.fallback_pid() is None and storage.nnid_pids_with_saves() == []
+
+		# An NNID login counts once it has a save (not if the first setup stopped before the upload)
+		storage.set_nex_password(1737455655, "password", "nex_token_login")
+		data_id = storage.create_object(1737455655, data_type=100)
+		assert storage.nnid_pids_with_saves() == []
+		storage.add_upload("save", data_id, 1, 3)
+		storage.store_upload("save", b"abc")
+		assert storage.finish_upload(data_id, 1)
+		assert storage.nnid_pids_with_saves() == [1737455655]
+		storage.reset_owner(1737455655)
+		assert storage.nnid_pids_with_saves() == []
+
+		# The only NEX token account, then the PIDs consoles had (the newest for an unknown IP)
+		storage.set_nex_password(2003779687, "password", "nex_token")
+		assert storage.fallback_pid() == 2003779687
+		storage.set_nex_password(2003779688, "password", "nex_token")
+		assert storage.fallback_pid() is None  # which one is it?
+		storage.remember_console_pid("192.168.137.144", 2003779687)
+		storage.remember_console_pid("192.168.137.145", 2003779688)
+		assert storage.fallback_pid("192.168.137.144") == 2003779687
+		assert storage.fallback_pid("10.0.0.9") == storage.fallback_pid() == 2003779688
 	finally:
 		storage.close()
 

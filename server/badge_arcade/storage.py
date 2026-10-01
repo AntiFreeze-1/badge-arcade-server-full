@@ -140,6 +140,27 @@ class Storage:
 				row = self._db.execute("SELECT pid FROM console_pids ORDER BY updated DESC LIMIT 1").fetchone()
 		return row["pid"] if row else None
 
+	def fallback_pid(self, ip: str | None = None) -> int | None:
+		"""The PID for a NEX token request that came without one (the proxy missed the console's
+		logins): the PID this console's IP had before, then the most recent console's, then the
+		only one known. The manager hides its PID warning when there is one."""
+		pid = self.console_pid(ip) if ip else None
+		if pid is None:
+			pid = self.console_pid()
+		if pid is None:
+			known = self.nex_account_pids("nex_token")
+			pid = known[0] if len(known) == 1 else None
+		return pid
+
+	def nnid_pids_with_saves(self) -> list[int]:
+		"""The PIDs that logged in with a NEX token (an NNID's) and have a save here."""
+		with self._lock:
+			rows = self._db.execute(
+				"SELECT pid FROM nex_accounts a WHERE source='nex_token_login' AND EXISTS "
+				"(SELECT 1 FROM objects o WHERE o.owner_id=a.pid AND o.deleted=0 AND o.version>0)"
+			).fetchall()
+		return [row["pid"] for row in rows]
+
 	def nex_account_pids(self, source: str) -> list[int]:
 		with self._lock:
 			rows = self._db.execute("SELECT pid FROM nex_accounts WHERE source=?", (source,)).fetchall()

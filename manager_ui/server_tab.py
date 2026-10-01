@@ -2,6 +2,7 @@
 
 import datetime
 import re
+import sqlite3
 import threading
 import time
 import tkinter as tk
@@ -9,10 +10,11 @@ from tkinter import messagebox, ttk
 
 import serve
 from badge_arcade import maintenance
-from badge_arcade.config import lan_address
+from badge_arcade.config import lan_address, load_config
+from badge_arcade.storage import Storage
 
 from . import LOG_DIR, TITLE
-from .services import PROXY_EVENTS, SERVER_EVENTS, Service, port_open, public_host_fixed, tidy
+from .services import PROXY_EVENTS, SERVER_EVENTS, Service, console_ids, port_open, public_host_fixed, tidy
 from .widgets import BAD, GOOD, IDLE, WARN, hint, text_box
 
 LIVE_ROWS = ("Machines", "Free plays", "Game date", "Maintenance", "Letter")
@@ -33,8 +35,27 @@ class ServerTab:
 			ttk.Button(services, text="Start", command=lambda s=service: self.start_service(s)).grid(row=row, column=2, padx=3)
 			ttk.Button(services, text="Stop", command=lambda s=service: self.stop_service(s)).grid(row=row, column=3, padx=3)
 		ttk.Button(services, text="Restart server", command=self.restart_server).grid(row=0, column=4, padx=3)
+		# What the proxy knows about the 3DS: Badge Arcade's login needs one of the two. Each row
+		# is hidden while the server's database already has a working one (check_saved_console)
+		self.console_frame = ttk.Frame(services)
+		self.console_frame.grid(row=2, column=0, columnspan=5, sticky="w", pady=(6, 0))
+		self.console_rows = {}
+		for row, (key, what) in enumerate((("pid", "3DS's PID (seen when the 3DS goes online)"),
+				("nnid", "NNID (seen when Badge Arcade signs in)"))):
+			name = ttk.Label(self.console_frame, text=what, width=48)
+			name.grid(row=row, column=0, sticky="w", pady=3)
+			label = ttk.Label(self.console_frame)
+			label.grid(row=row, column=1, sticky="w", pady=3)
+			self.console_rows[key] = (name, label)
+		self.console_hint = ttk.Label(self.console_frame, style="Warn.TLabel",
+			text="Badge Arcade can't log in until the proxy sees the 3DS's PID or NNID (error 022-2534).")
+		self.console_hint.grid(row=2, column=0, columnspan=2, sticky="w")
+		self.read_console_ids()
+		self.saved_console = {"pid": False, "nnid": False}
+		# Once the window runs: its thread can only hand the result over then
+		self.after(100, self.check_saved_console)
 		self.mode_label = ttk.Label(services, style="Hint.TLabel")
-		self.mode_label.grid(row=2, column=0, columnspan=5, sticky="w", pady=(6, 0))
+		self.mode_label.grid(row=3, column=0, columnspan=5, sticky="w", pady=(6, 0))
 
 		date = ttk.LabelFrame(tab, text="Game date", padding=10)
 		date.pack(fill="x", pady=8)
@@ -75,14 +96,18 @@ class ServerTab:
 
 	def refresh_services(self) -> None:
 		running = []
+		started_here = {}
 		for service in (self.server, self.proxy):
 			label = self.service_labels[service.name]
 			if service.listening():
 				running.append(service)
-				label.configure(text="● Running" if service.pid() else "● Running (started elsewhere)", style="Good.TLabel")
+				started_here[service.name] = bool(service.pid())
+				label.configure(text="● Running" if started_here[service.name] else "● Running (started elsewhere)",
+					style="Good.TLabel")
 			else:
 				label.configure(text="○ Stopped", style="Hint.TLabel")
 		self.sidebar.set_mark("Server", "●", GOOD if len(running) == 2 else WARN if running else IDLE)
+		self.show_console_ids(self.proxy in running, started_here.get(self.proxy.name, False))
 
 		hotspot_mode = self.settings["connection"] == "hotspot"
 		self.check_proxy_hotspot()
@@ -106,6 +131,77 @@ class ServerTab:
 		if warning:
 			self.status.set(warning)
 		self.after(3000, self.refresh_services)
+
+	def read_console_ids(self) -> None:
+		"""What the running proxy has learned about the 3DS so far, from the end of its log (it
+		logs every connection, so the log grows). poll_logs carries on from there."""
+		self.console_seen = console_ids([])
+		if not self.proxy.log.exists():
+			return
+		start = max(0, self.proxy.log.stat().st_size - 8_000_000)
+		with open(self.proxy.log, "rb") as f:
+			f.seek(start)
+			tail = f.read()
+		self.log_offsets[self.proxy.log] = start + len(tail)
+		self.console_seen = console_ids(tail.decode("utf-8", "replace").splitlines())
+
+	def check_saved_console(self) -> None:
+		"""Every 10 seconds: whether the server's database already has a PID it can give the 3DS
+		when the proxy misses it (so no error 022-2534), and an NNID that has logged in and has a
+		save. Their rows are hidden then, as there's nothing to watch for."""
+		def work() -> dict[str, bool]:
+			config = load_config(serve.SERVER_CONFIG)
+			if not (config.data_path / "badge_arcade.db").exists():
+				return {"pid": False, "nnid": False}  # the server creates it when it first starts
+			storage = Storage(config.data_path)
+			try:
+				return {"pid": storage.fallback_pid() is not None, "nnid": bool(storage.nnid_pids_with_saves())}
+			finally:
+				storage.close()
+
+		def run():
+			try:
+				result = work()
+			except (OSError, ValueError, sqlite3.Error):  # e.g. the database is busy: next time
+				result = None
+			self.after(0, done, result)
+
+		def done(result):
+			if result is not None:
+				self.saved_console = result
+			self.after(10_000, self.check_saved_console)
+
+		threading.Thread(target=run, daemon=True).start()
+
+	def show_console_ids(self, proxy_running: bool, started_here: bool) -> None:
+		"""Whether the proxy has seen the 3DS's PID and NNID. It needs one of them to answer
+		Badge Arcade's login; with neither, the 3DS shows error 022-2534."""
+		not_seen = {"pid": "○ Not seen yet: reconnect the 3DS to the internet",
+			"nnid": "○ Not seen yet: it shows up when Badge Arcade starts"}
+		for key, (name, label) in self.console_rows.items():
+			if self.saved_console[key]:
+				name.grid_remove()
+				label.grid_remove()
+				continue
+			name.grid()
+			label.grid()
+			if not proxy_running:
+				label.configure(text="○ The proxy isn't running", style="Hint.TLabel")
+			elif not started_here:  # its log goes to its own window
+				label.configure(text="○ Unknown (the proxy was started outside this window)", style="Hint.TLabel")
+			elif self.console_seen[key]:
+				label.configure(text=f"● {self.console_seen[key]}", style="Good.TLabel")
+			else:
+				label.configure(text=not_seen[key], style="Warn.TLabel")
+		# With a PID in the database, the server can answer without the proxy
+		if proxy_running and started_here and not any(self.console_seen.values()) and not self.saved_console["pid"]:
+			self.console_hint.grid()
+		else:
+			self.console_hint.grid_remove()  # no empty row
+		if all(self.saved_console.values()):
+			self.console_frame.grid_remove()
+		else:
+			self.console_frame.grid()
 
 	def check_proxy_hotspot(self) -> None:
 		"""A proxy started before the hotspot came on only listens for 3DSs with a proxy set, so
@@ -273,6 +369,8 @@ class ServerTab:
 			if service is self.server:
 				for line in lines:
 					self.check_letter_downloaded(line)
+			else:
+				self.console_seen = console_ids(lines, self.console_seen)
 			if not self.show_all_logs.get():
 				lines = [tidy(line) for line in lines if pattern.search(line)]
 			if lines:
