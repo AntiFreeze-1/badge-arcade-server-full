@@ -71,7 +71,7 @@ class ServerTab:
 		ttk.Button(row, text="Current date", command=lambda: self.date_var.set("current")).pack(side="left", padx=6)
 		ttk.Button(row, text="Apply and restart server", command=self.apply_date).pack(side="left")
 
-		live = ttk.LabelFrame(tab, text="What the 3DS gets next time Badge Arcade opens", padding=10)
+		live = ttk.LabelFrame(tab, text="What the 3DS pulls from the server", padding=10)
 		live.pack(fill="x")
 		self.live_grid = ttk.Frame(live)
 		self.live_values = {}
