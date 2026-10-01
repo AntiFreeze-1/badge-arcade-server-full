@@ -100,9 +100,12 @@ From the command line (stop the server first):
 python update.py --check        # check for an update
 python update.py --apply --yes  # install it
 ```
+**Notice:** Sometimes, after an update, your copy of the server may throw some errors. If this does
+occur, please redownload the repository, and copy the new files into the same directory as the old 
+ones, overwriting any files that do exist.
 
-Contributors: see [CONTRIBUTING.md](CONTRIBUTING.md) for how releases and
-versioning work.
+> Contributors: see [CONTRIBUTING.md](CONTRIBUTING.md) for how releases and
+> versioning work.
 
 ## Troubleshooting
 
