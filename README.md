@@ -68,7 +68,7 @@ Your save database (`server/data/badge_arcade.db`) is created automatically.
 |---|---|
 | **Setup** | Checklist, connection options, and updates. |
 | **Server** | Start/stop the server, set the game date, and watch activity. |
-| **Serve a week** | Pick an archived or custom week and serve it. |
+| **Serve a week** | Pick an archived or custom week and serve it, or turn on rotation to change the week by itself each time one ends. |
 | **Build a week** | Mix machines from archived weeks into a new week. |
 | **Badges** | Make your own badges from pictures. |
 | **Machine editor** | Design your own claw machines. |
@@ -86,7 +86,11 @@ On macOS/Linux, you can do the same from the command line:
 cd spotpass-letter
 python serve.py week dec29
 python serve.py free-plays --plays 2
+python serve.py rotation on      # change the week by itself when it ends
+python serve.py check            # what moves the rotation on: run it daily (e.g. from cron)
 ```
+
+The manager does what `check` does every few minutes while it's open.
 
 ## Updating
 
