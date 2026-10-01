@@ -9,6 +9,11 @@
                                       send a letter to the Notifications applet (experimental)
   python serve.py letter --remove     take the live letter down
   python serve.py status              what's live and the next IDs
+  python serve.py rotation on|off     change the week by itself when the live one ends
+  python serve.py rotation skip|include NAME
+                                      leave a week out of the rotation, or put it back
+  python serve.py check               what the manager does every few minutes: when the live
+                                      week has ended, serve the next one (rotation) or move it
 
 Then fully close and reopen Badge Arcade. No server restart is needed (except
 after changing the game date).
@@ -58,6 +63,8 @@ NEWS_NAMES = ("news.dat.boss", "news_v131.dat.boss")
 def news_files() -> list[Path]:
 	return [LIVE_NEWS.with_name(name) for name in NEWS_NAMES]
 SHORT_NAMES = {"dec29": "data_v131-2022-12-29-09-40-NA.enc", "custom": "monster-hunter-mix"}
+# How keep_week_current's message starts when the rotation served the next week
+ROTATED = "The week ended, so the rotation moved on. "
 
 
 def boss_key() -> bytes:
@@ -255,20 +262,64 @@ def serve_week(week: Week, key: bytes, date: datetime.date | None = None) -> str
 	else:
 		out, _ = repack(data, key, new_id, int(time.time()))
 	put_live(out, LIVE_WEEK)
+	if week.key != "live":
+		state["live_week"] = week.key  # where the rotation goes on from
 	save_state(state)
 	return message
 
 
 def keep_week_current(key: bytes) -> str | None:
-	"""Moves the live week to the game date if it no longer includes it (e.g. when the
-	game date is the current date and a week has passed). None if nothing was needed."""
+	"""When the live week no longer includes the game date (the game date is the current
+	date and the week has passed), serves the next week of the rotation if it's on, or
+	else moves the live week to the game date. None if nothing was needed."""
 	if not LIVE_WEEK.exists():
 		return None
 	start, end, machines, _ = container_info(LIVE_WEEK, key)
 	live = Week("live", "the live week", LIVE_WEEK, False, start, end, machines)
 	if not start or live.covers(current_game_date()):
 		return None
+	if rotation_settings()["on"]:
+		for week in rotation_order(key):
+			try:
+				return ROTATED + serve_week(week, key)
+			except ValueError:
+				continue  # one the game can't handle (see serve_week): the one after it
 	return serve_week(live, key)
+
+
+# ----- rotation -----
+
+def rotation_settings(state: dict | None = None) -> dict:
+	"""{"on": whether the week changes by itself, "skip": keys of the weeks left out}"""
+	return {"on": False, "skip": [], **(state or load_state()).get("rotation", {})}
+
+
+def set_rotation(on: bool | None = None, skip: str | None = None, include: str | None = None) -> dict:
+	"""Turns the rotation on or off, or leaves a week (by key) out of it or puts it back."""
+	state = load_state()
+	rotation = rotation_settings(state)
+	if on is not None:
+		rotation["on"] = on
+	if skip and skip not in rotation["skip"]:
+		rotation["skip"].append(skip)
+	if include in rotation["skip"]:
+		rotation["skip"].remove(include)
+	state["rotation"] = rotation
+	save_state(state)
+	return rotation
+
+
+def rotation_order(key: bytes, state: dict | None = None) -> list[Week]:
+	"""The weeks the rotation can serve, the next one first: the order of list_weeks
+	(Nintendo's weeks by date, then custom weeks), carrying on after the week served
+	last and starting over at the end. Weeks without dates and the ones left out aren't
+	in it."""
+	state = state or load_state()
+	weeks = list_weeks(key)
+	skip = set(rotation_settings(state)["skip"])
+	keys = [week.key for week in weeks]
+	after = keys.index(state["live_week"]) + 1 if state.get("live_week") in keys else 0
+	return [week for week in weeks[after:] + weeks[:after] if week.start and week.key not in skip]
 
 
 # ----- free plays -----
@@ -428,6 +479,8 @@ def status(key: bytes) -> dict:
 		"next_id": state["last_ns_data_id"] + 1,
 		"next_round": state["free_play_round"] + 1,
 		"letter": live_letter(),
+		"rotation": rotation_settings(state),
+		"next_week": next(iter(rotation_order(key, state)), None),
 	}
 
 
@@ -451,6 +504,10 @@ def main() -> int:
 	letter.add_argument("--region", choices=sorted(letters.TITLE_IDS), default="USA")
 	letter.add_argument("--remove", action="store_true", help="take the live letter down instead")
 	sub.add_parser("status", help="show what's live")
+	rotation = sub.add_parser("rotation", help="show the rotation, or change it")
+	rotation.add_argument("change", nargs="?", choices=["on", "off", "skip", "include"])
+	rotation.add_argument("week", nargs="?", help="with skip or include: a name from 'weeks'")
+	sub.add_parser("check", help="serve the next week (or move the live one) if the live week has ended")
 	args = parser.parse_args()
 	key = boss_key()
 	if args.command == "letter" and args.remove:
@@ -484,6 +541,25 @@ def main() -> int:
 		print(f"Letter: \"{live.title}\", sent {live.sent}" + (f", downloaded {live.downloaded}" if live.downloaded else
 			", not downloaded yet") if live else "Letter: none")
 		print(f"Next SpotPass ID: {s['next_id']:#x}, next free-play round: {s['next_round']}")
+		print(f"Rotation: {'on, next is ' + s['next_week'].label if s['rotation']['on'] and s['next_week'] else 'off'}")
+	elif args.command == "rotation":
+		if args.change in ("skip", "include"):
+			found = find_week(args.week, key) if args.week else None
+			if not found:
+				print(f"No such week: {args.week} (see 'python serve.py weeks')")
+				return 1
+			set_rotation(**{args.change: found.key})
+		elif args.change:
+			set_rotation(on=args.change == "on")
+		settings = rotation_settings()
+		print(f"Rotation is {'on' if settings['on'] else 'off'}. When the live week ends"
+			+ (", these are served in turn:" if settings["on"] else ", it's moved to the game date. With it on:"))
+		for w in rotation_order(key):
+			print(f"  {w.key:40} {w.label}")
+		if settings["skip"]:
+			print("Left out: " + ", ".join(settings["skip"]))
+	elif args.command == "check":
+		print(keep_week_current(key) or "The live week still includes the game date.")
 	return 0
 
 

@@ -6,9 +6,23 @@ line-length = 140
 extend-exclude = ["server/mitm/mitmproxy-nintendo", "server/mitm/.venv", "helper/workspace"]
 
 [tool.ruff.lint]
-# Syntax errors and pyflakes (undefined names, unused imports and variables)
-select = ["E9", "F"]
+# Syntax errors, pyflakes (undefined names, unused imports and variables), bugbear (likely bugs)
+# and pyupgrade (older ways of writing things that Python 3.12 has better ones for)
+select = ["E9", "F", "B", "UP"]
+ignore = [
+  "B905",  # zip() without strict=: the code zips lists it built to the same length
+  "UP036",  # install.py and setup_mitm.py check the Python version on purpose, to explain it on older ones
+]
 
 [tool.pytest.ini_options]
 # "python -m pytest" in this folder runs every suite; each folder's tests still run on their own
 testpaths = ["server/tests", "spotpass-letter/tests", "helper/tests"]
+
+[tool.coverage.run]
+# "coverage run -m pytest" in this folder: how much of the project the tests run
+source = ["."]
+omit = ["*/tests/*", "server/mitm/mitmproxy-nintendo/*", "*/.venv/*", "helper/workspace/*"]
+
+[tool.coverage.report]
+skip_empty = true
+sort = "cover"

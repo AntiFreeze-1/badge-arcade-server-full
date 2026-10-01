@@ -69,6 +69,8 @@ class Manager(SetupTab, ServerTab, ServeWeekTab, FreePlaysTab, LettersTab, Helpe
 		self.proxy_healed: tuple[str, float] | None = None  # (hotspot IP, proxy start) of the last automatic restart
 		self.weeks: list[serve.Week] = []
 		self.live_week: str | None = None  # the label of the week the 3DS gets (see refresh_status)
+		self.next_week: str | None = None  # the key of the week the rotation serves next, if it's on
+		self.status_day = None  # the game date refresh_status last saw (see watch_game_date)
 		self.log_offsets = {}
 		add_styles(self)
 
@@ -123,6 +125,7 @@ class Manager(SetupTab, ServerTab, ServeWeekTab, FreePlaysTab, LettersTab, Helpe
 		self.after(1000, self.poll_logs)
 		self.after(500, self.check_leftover_hosts)
 		self.after(2000, self.check_for_update)
+		self.after(60_000, self.watch_game_date)
 
 	def background(self, message: str, work, done=None) -> None:
 		"""Runs work() off the UI thread, then done(result) on it. Errors are shown in a dialog."""

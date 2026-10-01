@@ -68,7 +68,7 @@ Your save database (`server/data/badge_arcade.db`) is created automatically.
 |---|---|
 | **Setup** | Checklist, connection options, and updates. |
 | **Server** | Start/stop the server, set the game date, and watch activity. |
-| **Serve a week** | Pick an archived or custom week and serve it. |
+| **Serve a week** | Pick an archived or custom week and serve it, or turn on rotation to change the week by itself each time one ends. |
 | **Build a week** | Mix machines from archived weeks into a new week. |
 | **Badges** | Make your own badges from pictures. |
 | **Machine editor** | Design your own claw machines. |
@@ -87,13 +87,18 @@ On macOS/Linux, you can do the same from the command line:
 cd spotpass-letter
 python serve.py week dec29
 python serve.py free-plays --plays 2
+python serve.py rotation on      # change the week by itself when it ends
+python serve.py check            # what moves the rotation on: run it daily (e.g. from cron)
 ```
+
+The manager does what `check` does every few minutes while it's open.
 
 ## Updating
 
 The manager checks for updates daily and shows **Update now** on the Setup tab.
 Updates never touch your config, saves, SpotPass files or keys, and old files are
-backed up to `backups/` first.
+backed up to `backups/` first. If a file can't be replaced (another program has it
+open), the update puts the previous version back and says which file it was.
 
 From the command line (stop the server first):
 
@@ -101,15 +106,17 @@ From the command line (stop the server first):
 python update.py --check        # check for an update
 python update.py --apply --yes  # install it
 ```
-**Notice:** Sometimes, after an update, your copy of the server may throw some errors. If this does
-occur, please redownload the repository, and copy the new files into the same directory as the old 
-ones, overwriting any files that do exist.
 
 > Contributors: see [CONTRIBUTING.md](CONTRIBUTING.md) for how releases and
 > versioning work.
 
 ## Troubleshooting
 
+- **An update failed, or errors appear after one:** close the manager and anything
+  else that has files in the project folder open, then update again. If the manager
+  won't open at all, download the project from GitHub (*Code → Download ZIP*) and copy
+  its files over your folder. Your config, saves, SpotPass files and keys aren't in the
+  download, so they're kept.
 - **3DS can't see the hotspot:** it's probably on 5 GHz. Use proxy mode instead.
 - **Connection test fails on the hotspot:** check the Setup tab for a DNS warning
   and confirm the NoSSL patch and game patching are on. Otherwise use proxy mode.

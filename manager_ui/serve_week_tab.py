@@ -2,6 +2,7 @@
 
 from collections import Counter
 import datetime
+import tkinter as tk
 from tkinter import messagebox, ttk
 
 import serve
@@ -38,16 +39,20 @@ class ServeWeekTab:
 		hint(tab, "Pick a week of machines and press Serve this week. Then fully close and reopen Badge Arcade "
 			"on the 3DS; the new week downloads during \"Downloading Data\". Your custom weeks (from the Custom weeks "
 			"tab) are listed here too.").pack(fill="x")
+		hint(tab, "With rotation on, the next week in this list is served by itself when the live one ends, "
+			"like Nintendo's weekly machines. It needs the game date to be the current date (Server tab).").pack(fill="x", pady=(4, 0))
 		body = ttk.Frame(tab)
 		body.pack(fill="both", expand=True, pady=8)
-		box, self.week_tree = scrolled(body, ttk.Treeview, columns=("dates", "machines"), show="tree headings",
+		box, self.week_tree = scrolled(body, ttk.Treeview, columns=("dates", "machines", "rotation"), show="tree headings",
 			selectmode="browse", height=12)
 		self.week_tree.heading("#0", text="Week", anchor="w")
 		self.week_tree.heading("dates", text="Original dates", anchor="w")
 		self.week_tree.heading("machines", text="Machines", anchor="e")
+		self.week_tree.heading("rotation", text="Rotation", anchor="center")
 		self.week_tree.column("#0", width=360)
 		self.week_tree.column("dates", width=190)
 		self.week_tree.column("machines", width=80, anchor="e")
+		self.week_tree.column("rotation", width=90, anchor="center")
 		self.week_tree.tag_configure("live", foreground=GOOD, font=(FONT, 9, "bold"))
 		box.pack(side="left", fill="both", expand=True)
 		self.week_tree.bind("<<TreeviewSelect>>", lambda e: self.show_week())
@@ -58,6 +63,11 @@ class ServeWeekTab:
 		ttk.Button(buttons, text="Serve this week", style="Accent.TButton", command=self.serve_selected_week).pack(side="left")
 		ttk.Button(buttons, text="Delete custom week", command=self.delete_selected_week).pack(side="left", padx=6)
 		ttk.Button(buttons, text="Refresh", command=self.refresh_weeks).pack(side="left")
+		self.rotation_on = tk.BooleanVar(value=serve.rotation_settings()["on"])
+		ttk.Checkbutton(buttons, text="Rotation: change the week by itself when it ends", variable=self.rotation_on,
+			command=self.toggle_rotation).pack(side="left", padx=(18, 6))
+		self.skip_button = ttk.Button(buttons, text="Leave out of rotation", command=self.toggle_skip)
+		self.skip_button.pack(side="left")
 
 	def refresh_weeks(self) -> None:
 		def done(weeks):
@@ -65,20 +75,25 @@ class ServeWeekTab:
 			self.week_tree.delete(*self.week_tree.get_children())
 			for index, week in enumerate(weeks):
 				dates = f"{week.start} to {week.end - datetime.timedelta(days=1)}" if week.start else ""
-				self.week_tree.insert("", "end", iid=str(index), text=week.label, values=(dates, week.machines))
+				self.week_tree.insert("", "end", iid=str(index), text=week.label, values=(dates, week.machines, ""))
 			self.mark_live_week()
 
 		self.background("Reading weeks...", lambda: serve.list_weeks(self.key), done)
 
 	def mark_live_week(self) -> None:
-		"""Shows which week the 3DS gets (self.live_week, from the Server tab's refresh_status)."""
+		"""Shows which week the 3DS gets and which one the rotation serves next (self.live_week
+		and self.next_week, from the Server tab's refresh_status), and the weeks left out."""
+		skip = serve.rotation_settings()["skip"]
 		for index, week in enumerate(self.weeks):
 			iid = str(index)
 			if not self.week_tree.exists(iid):
 				continue
 			live = week.label == self.live_week
+			rotation = "left out" if week.key in skip else "next" if week.key == self.next_week else ""
 			self.week_tree.item(iid, text=week.label + (LIVE_MARK if live else ""), tags=["live"] if live else [])
+			self.week_tree.set(iid, "rotation", rotation)
 		stripe(self.week_tree)
+		self.show_week()
 
 	def selected_week(self) -> serve.Week | None:
 		selection = self.week_tree.selection()
@@ -88,6 +103,8 @@ class ServeWeekTab:
 		week = self.selected_week()
 		if not week:
 			return
+		self.skip_button.config(text="Put back in rotation" if week.key in serve.rotation_settings()["skip"]
+			else "Leave out of rotation")
 		names = week.setups or serve.week_machine_names(week.path, self.key)
 		counts = Counter(series_of(n) for n in names)
 		text = [week.label + ("  (live now)" if week.label == self.live_week else ""), ""]
@@ -106,6 +123,22 @@ class ServeWeekTab:
 			messagebox.showinfo(TITLE, message + "\n\nNow fully close and reopen Badge Arcade.")
 
 		self.background("Serving the week...", lambda: serve.serve_week(week, self.key), done)
+
+	def toggle_rotation(self) -> None:
+		serve.set_rotation(on=self.rotation_on.get())
+		self.refresh_status()  # shows what comes next
+
+	def toggle_skip(self) -> None:
+		week = self.selected_week()
+		if not week:
+			messagebox.showinfo(TITLE, "Pick a week first.")
+			return
+		if week.key in serve.rotation_settings()["skip"]:
+			serve.set_rotation(include=week.key)
+		else:
+			serve.set_rotation(skip=week.key)
+		self.mark_live_week()
+		self.refresh_status()  # the next week may have changed
 
 	def delete_selected_week(self) -> None:
 		week = self.selected_week()

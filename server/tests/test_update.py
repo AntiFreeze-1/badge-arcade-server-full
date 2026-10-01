@@ -165,6 +165,79 @@ def test_install_zip_refuses_a_download_that_isnt_newer(tmp_path: Path):
 	assert (tmp_path / "manager.py").read_text() == "new"
 
 
+def old_install(root: Path) -> dict[str, str]:
+	"""A zip install of version 1.0.0 with two modules, one of which the next version drops."""
+	files = {"version.txt": "1.0.0\n", "manager.py": "old manager", "server/a.py": "old a", "server/dropped.py": "old"}
+	for path, content in files.items():
+		(root / path).parent.mkdir(parents=True, exist_ok=True)
+		(root / path).write_text(content)
+	(root / ".update-manifest.json").write_text(json.dumps(sorted(files)))
+	return files
+
+
+NEW_VERSION = {"version.txt": b"2.0.0\n", "manager.py": b"new manager", "server/a.py": b"new a", "server/b.py": b"new b"}
+
+
+def project_files(root: Path) -> dict[str, str]:
+	return {path.relative_to(root).as_posix(): path.read_text() for path in root.rglob("*")
+		if path.is_file() and "backups" not in path.parts}
+
+
+@pytest.mark.parametrize("stuck, step", [
+	("server/a.py", "aside"), ("server/a.py", "in"),  # a changed file
+	("server/b.py", "in"),  # a new file
+	("server/dropped.py", "aside"),  # a file the new version drops
+	("version.txt", "aside"), ("version.txt", "in"),  # the last one
+])
+def test_install_zip_puts_the_old_version_back(tmp_path: Path, monkeypatch, stuck: str, step: str):
+	"""Windows refuses to replace a file another program has open: the update then puts every
+	file back as it was, rather than leaving half of the old version and half of the new one."""
+	before = old_install(tmp_path)
+	before[".update-manifest.json"] = (tmp_path / ".update-manifest.json").read_text()
+	replace = Path.replace
+
+	def locked(self: Path, target):
+		# step "aside": moving the old file out of the way fails; "in": moving the new one in does
+		moving = Path(target) if step == "in" else self
+		if moving == tmp_path / stuck and (step == "aside" or self.name.endswith(update.STAGED)):
+			raise PermissionError(13, "The process cannot access the file because it is being used by another process")
+		return replace(self, target)
+	monkeypatch.setattr(Path, "replace", locked)
+
+	with pytest.raises(update.UpdateError, match="previous version was put back"):
+		update.install_zip(release_zip(NEW_VERSION), root=tmp_path)
+	assert project_files(tmp_path) == before  # no new files, no leftovers next to them
+	assert len(list((tmp_path / "backups").iterdir())) == 1  # and the backup is still there
+
+
+def test_install_zip_leaves_a_broken_download_alone(tmp_path: Path):
+	before = old_install(tmp_path)
+	data = release_zip({**NEW_VERSION, "server/b.py": b"CORRUPTED?"})
+	data = data.replace(b"CORRUPTED?", b"corrupted!")  # the stored checksum no longer matches
+	with pytest.raises(update.UpdateError, match="nothing was changed"):
+		update.install_zip(data, root=tmp_path)
+	assert project_files(tmp_path) == {**before, ".update-manifest.json": json.dumps(sorted(before))}
+
+
+def test_install_zip_changes_version_txt_last(tmp_path: Path, monkeypatch):
+	"""If an update stops partway (the PC loses power), the old version number stays, so the
+	manager offers the update again and finishes it."""
+	old_install(tmp_path)
+	moved_in = []
+	replace = Path.replace
+
+	def record(self: Path, target):
+		if self.name.endswith(update.STAGED):
+			moved_in.append(Path(target).relative_to(tmp_path).as_posix())
+		return replace(self, target)
+	monkeypatch.setattr(Path, "replace", record)
+	update.install_zip(release_zip({"VERSION": b"2.0.0", "version.txt": b"2.0.0\n", "manager.py": b"new", "zz.py": b"new"}),
+		root=tmp_path)
+	assert moved_in[-1] == "version.txt" and sorted(moved_in) == ["VERSION", "manager.py", "version.txt", "zz.py"]
+	assert project_files(tmp_path)["version.txt"] == "2.0.0\n"
+	assert not [path for path in project_files(tmp_path) if path.endswith((update.STAGED, update.OLD))]
+
+
 def test_apply_refuses_while_running(monkeypatch):
 	monkeypatch.setattr(update, "running_services", lambda: ["server"])
 	with pytest.raises(update.UpdateError, match="stop the server"):

@@ -17,7 +17,9 @@ from . import LOG_DIR, TITLE
 from .services import PROXY_EVENTS, SERVER_EVENTS, Service, console_ids, port_open, public_host_fixed, tidy
 from .widgets import BAD, GOOD, IDLE, WARN, hint, text_box
 
-LIVE_ROWS = ("Machines", "Free plays", "Game date", "Maintenance", "Letter")
+LIVE_ROWS = ("Machines", "Next week", "Free plays", "Game date", "Maintenance", "Letter")
+# How often the manager checks whether the game date has moved on (see watch_game_date)
+DAY_CHECK_MS = 5 * 60_000
 ERROR_LINE = re.compile(r"ERROR|Traceback|Error|error|does not trust")
 
 
@@ -332,15 +334,26 @@ class ServerTab:
 		def done(result):
 			moved, s = result
 			if moved:
-				self.status.set("Moved the served week to the game date. Reopen Badge Arcade to get it.")
+				self.status.set(("The week ended, so the rotation served the next one." if moved.startswith(serve.ROTATED) else
+					"Moved the served week to the game date.") + " Reopen Badge Arcade to get it.")
 			start, end = s["week_dates"]
 			today = s["current_date"]
+			self.status_day = today
 			plays = next((p for _, b, e, p in s["campaigns"] if today and b.date() <= today < e.date()), None)
 			letter = s["letter"]
+			following = s["next_week"] if s["rotation"]["on"] else None
 			self.live_week = s["week"]
+			self.next_week = following.key if following else None
 			self.mark_live_week()
+			if not following:
+				upcoming = "the same machines again" + ("" if s["rotation"]["on"] else "  (turn on rotation in Serve a week to change them)")
+			elif s["game_date"]:
+				upcoming = f"{following.label}, once the game date is {end} or later"
+			else:
+				upcoming = f"{following.label}, on {end}"
 			self.show_live({
 				"Machines": f"{s['week']}  ({s['week_machines']} machines, {start} to {end})",
+				"Next week": upcoming,
 				"Free plays": f"{plays if plays is not None else 'none'} on the game date"
 					+ ("" if plays is not None else "  (use the Free plays tab)"),
 				"Game date": f"{today}" + ("  (current date)" if not s["game_date"] else ""),
@@ -350,6 +363,19 @@ class ServerTab:
 			})
 
 		self.background("Checking what's live...", work, done)
+
+	def watch_game_date(self) -> None:
+		"""Checks what's live again once the game date changes (at midnight UTC, when it's the
+		current date), so the served week moves on, or the rotation serves the next one, while
+		the manager stays open."""
+		try:
+			today = serve.current_game_date()
+		except (OSError, ValueError):
+			today = self.status_day  # config.json is being written: next time
+		if self.status_day is not None and today != self.status_day:
+			self.status_day = today
+			self.refresh_status()
+		self.after(DAY_CHECK_MS, self.watch_game_date)
 
 	def clear_log_view(self) -> None:
 		self.log_view.configure(state="normal")

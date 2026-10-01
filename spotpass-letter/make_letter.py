@@ -860,9 +860,9 @@ def main(argv=None) -> int:
 	try:
 		return args.func(args)
 	except (FileNotFoundError, IsADirectoryError, PermissionError) as e:
-		raise SystemExit(f"error: {e.strerror}: {e.filename}")
+		raise SystemExit(f"error: {e.strerror}: {e.filename}") from None
 	except ValueError as e:
-		raise SystemExit(f"error: {e}")
+		raise SystemExit(f"error: {e}") from None
 
 
 if __name__ == "__main__":
