@@ -286,7 +286,7 @@ python -m pytest tests
 cd ../spotpass-letter && python -m pytest tests
 ```
 
-GitHub Actions runs these on Windows and Linux for every push and pull
+GitHub Actions runs these on Windows, macOS and Linux for every push and pull
 request, along with `ruff check .` from the project folder.
 
 `tests/test_end_to_end.py` starts the whole server on localhost and uses
