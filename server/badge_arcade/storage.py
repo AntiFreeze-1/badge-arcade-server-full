@@ -407,3 +407,9 @@ class Storage:
 				(pid, int(time.time()), json.dumps(data))
 			)
 			self._db.commit()
+
+	def play_log_times(self) -> list[tuple[int | None, int]]:
+		"""(PID, time received) of every play report, oldest first."""
+		with self._lock:
+			rows = self._db.execute("SELECT pid, received FROM play_logs ORDER BY received, id").fetchall()
+		return [(row["pid"], row["received"]) for row in rows]
