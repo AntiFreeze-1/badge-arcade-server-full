@@ -10,6 +10,7 @@
 
 	"data_dir": "data",
 	"boss_dir": "../other",
+	"boss_key_file": "../spotpass-letter/boot9.bin",
 
 	"nex_keys_file": "nex-keys.txt",
 	"maintenance_file": "maintenance.json",

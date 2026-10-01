@@ -85,7 +85,10 @@ different for every player.
 ### SpotPass files in `other/`
 
 The server sends whatever is in `other/` under the names the 3DS asks for.
-The tools expect these names (US region):
+The tools expect these names (US region). They work for an EUR copy of the game
+too: every SpotPass file names the game it's for, so the server rewrites that to
+the EUR Badge Arcade as it sends them. It needs `boot9.bin` in `spotpass-letter/`
+for that.
 
 | File | What it is |
 |---|---|
@@ -203,6 +206,11 @@ stay as they are for older versions:
   3DS to the internet while the proxy is running, and open it again.
 - **"This service is not available in your region"** straight away: see
   *Region-changed consoles* in [server/README.md](server/README.md#each-session).
+- **"Could not save to the SD card" right after the download (EUR game).**
+  The SpotPass files are the USA ones, and the console can't save them for
+  the EUR game unless the server converts them, which needs `boot9.bin` in
+  `spotpass-letter/`. The server's log says *Made SpotPass file ... out to
+  Badge Arcade EUR* when it does. Restart the game after adding `boot9.bin`.
 - **Proxy mode stopped working after a restart.** The PC's IP address can
   change; the Setup tab shows the current one to enter on the 3DS.
 
