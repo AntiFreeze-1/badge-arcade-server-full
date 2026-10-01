@@ -1,46 +1,47 @@
 # Nintendo Badge Arcade server
 
-A self-hosted server for **Nintendo Badge Arcade** on the 3DS, for personal use
-after Nintendo's shutdown. With it, the game connects again, saves your
-progress, loads weekly machines from archived SpotPass data, and can hand out
+A self-hosted server for **Nintendo Badge Arcade** on the 3DS, for use
+after Nintendo's shutdown. With it, the game connects to the ad-hoc server, saves your
+progress, loads weekly machines from SpotPass data, and can hand out
 free plays. You can also make your own badges and claw machines and put them in
 a week. A manager window takes care of setup and the day-to-day.
 
 > **No Nintendo files are included.** SpotPass data, console dumps, the game's
 > code and keys are copyrighted or console-specific, so you provide your own
-> (see [What you need to provide](#what-you-need-to-provide)). The
-> `.gitignore` keeps them out of the repository; please don't commit them.
+> (see [What you need to provide](#what-you-need-to-provide)). 
+> Please don't commit them. We don't want to be taken down. 😊
 
-## Quick start (Windows)
+## Quick start
 
 1. Install [Python 3.12 or newer](https://www.python.org/downloads/).
-2. Double-click **Setup.bat**. It installs the Python packages, creates
+2. Double-click **Setup.bat** (Windows) or run **python install.py** (MacOS/Linux). 
+    It installs the Python packages, creates
    `server/config.json` and sets up the proxy (about 100 MB of downloads).
-3. Add the files from [What you need to provide](#what-you-need-to-provide).
-4. Copy the `luma` folder from `server/mitm/sd-card` to the root of the 3DS's
+4. Add the files from [What you need to provide](#what-you-need-to-provide).
+5. Copy the `luma` folder from `server/mitm/sd-card` to the root of the 3DS's
    SD card, and make sure **Enable game patching** is on in Luma3DS's settings
-   (hold SELECT while powering on). This is Pretendo's NoSSL patch, which lets
-   the 3DS talk to the server.
-5. Double-click **Badge Arcade Manager.bat**. The **Setup** tab shows what's
+   (hold SELECT while powering on). This will enable the NoSSL patch, which will
+   allow the 3DS to connect to the server.
+6. Double-click **Badge Arcade Manager.bat** (Windows) or **python -m badge_arcade config.json** (MacOS/Linux). 
+   The **Setup** tab shows what's
    still missing, and how to connect the 3DS.
-6. Connect the 3DS (below), then open Badge Arcade.
+7. Connect the 3DS (below), then open Badge Arcade.
 
-On Linux or macOS, `python install.py` does step 2, and the server and proxy
-run from the command line (see [server/README.md](server/README.md)).
+For MacOS/Linux further usage, (see [server/README.md](server/README.md)).
 
 ## Connecting the 3DS
 
-Pick one in the manager's **Setup** tab.
+Pick an option from the manager's **Setup** tab.
 
 ### Through the PC's hotspot (recommended)
 
-The 3DS joins a Wi-Fi hotspot run by the PC and needs **no proxy settings**.
+The 3DS will join a Wi-Fi hotspot run by your PC, and needs **no proxy settings**.
 Press **Turn on hotspot**: Windows asks for admin rights once, the hotspot
 starts, and the server and proxy start with it. Then, on the 3DS:
 
-*System Settings → Internet Settings → Connection Settings → New Connection →
+On the 3DS, navigate to *System Settings → Internet Settings → Connection Settings → New Connection →
 Manual Setup → Search for an Access Point*, pick the network name shown in the
-manager, enter the password, and leave **Proxy Settings on No**. Run the
+manager, enter the password, and connect. Run the
 connection test and open Badge Arcade.
 
 How it works: Windows' Mobile Hotspot gives its devices the PC as their DNS
@@ -97,7 +98,7 @@ for that.
 | other `data_v131-*.enc` weeks | Optional: more weeks to switch between. |
 
 Once they're in place, serve a week and give free plays in the manager's
-**Serve a week** and **Free plays** tabs, or from the command line:
+**Serve a week** and **Free plays** tabs (Windows), or from the command line (MacOS/Linux):
 
 ```sh
 cd spotpass-letter
@@ -106,10 +107,9 @@ python serve.py free-plays --plays 2
 ```
 
 This creates `data_v131.dat.boss` and `playinfo_v131.dat.boss`, which the
-server sends. The archived weeks are from 2022–2023, so serving a week moves its
-schedule to the current date (or to a fixed `"game_date"` in
-`server/config.json`, if you set one). The manager keeps the served week on the
-current date as days pass.
+server sends. Serving a week moves its schedule to the current date 
+(or to a fixed `"game_date"` in `server/config.json`, if you set one). 
+The manager keeps the served week on the current date as days pass.
 
 ## The manager
 
@@ -189,12 +189,11 @@ stay as they are for older versions:
 ## Troubleshooting
 
 - **The 3DS doesn't see the hotspot.** The 3DS only has 2.4 GHz Wi-Fi. If the
-  PC shares a Wi-Fi connection, the hotspot runs on the same band as that
-  connection; connect the PC to a 2.4 GHz network or by cable.
+  PC is hosting the hotspot on 5GHz and unable to broadcast on 2.4GHz, switch
+  to proxy mode.
 - **The connection test fails on the hotspot.** Check the Setup tab for a
   DNS warning, and that the NoSSL patch is on the SD card with game patching
-  turned on in Luma. Security software that locks the hosts file can also
-  stop hotspot mode from working; use the proxy instead.
+  turned on in Luma. If that doesn't work, switch to proxy mode.
 - **The hosts file still has the Badge Arcade block** (for example after the
   PC restarted with the hotspot on). The manager offers to remove it when it
   starts, or run `python server/mitm/hotspot.py off`.
