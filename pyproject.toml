@@ -8,3 +8,7 @@ extend-exclude = ["server/mitm/mitmproxy-nintendo", "server/mitm/.venv", "helper
 [tool.ruff.lint]
 # Syntax errors and pyflakes (undefined names, unused imports and variables)
 select = ["E9", "F"]
+
+[tool.pytest.ini_options]
+# "python -m pytest" in this folder runs every suite; each folder's tests still run on their own
+testpaths = ["server/tests", "spotpass-letter/tests", "helper/tests"]

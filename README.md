@@ -182,6 +182,7 @@ stay as they are for older versions:
 | [`server/`](server/README.md) | The server: NEX authentication and secure servers, save storage, SpotPass file hosting, and the proxy and hotspot (`server/mitm/`). |
 | [`spotpass-letter/`](spotpass-letter/README.md) | SpotPass tools used by the manager: switch weeks (`serve.py`), build custom weeks (`custom_week.py`), free plays (`free_plays.py`), letters (`letters.py`, `make_letter.py`, experimental), and find the game's signing key (`find_sign_key.py`). |
 | [`helper/`](helper/README.md) | Your own badges and machines (the Badges, Machine editor and Custom weeks tabs): `bahelper/` does the work, `gui/` has the tabs, and `workspace/` keeps what you make. |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | For working on the project: how the pieces fit, where new code goes, and the rules that keep installs updating. |
 
 ## Troubleshooting
 

@@ -14,6 +14,10 @@ TITLE = "Badge Arcade Manager"   # dialogs: the helper's tabs live in the manage
 PLAYFIELD = (400, 240)   # the top screen; machine coordinates are pixels on it, y down
 # The helper's lists show badge thumbnails: taller rows than the manager's lists
 TREE_STYLE = "Thumbs.Treeview"
+# The arm field (formats.Machine.arm). 1, 2 and 4 were checked on a console; Nintendo's machines use
+# only 0, 1, 3 and 4, so 3 is the stick arm. 2, the half-claw, is in the game but no Nintendo machine
+# uses it: it pushes the badges away from itself.
+ARMS = {0: "0: standard claw", 1: "1: hammer arm", 2: "2: half-claw", 3: "3: stick arm", 4: "4: bomb arm"}
 
 
 def checker(size: tuple[int, int], cell: int = 8) -> Image.Image:
