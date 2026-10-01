@@ -18,16 +18,17 @@ and weeks. A manager window handles setup and day-to-day use.
 4. Copy the `luma` folder from `server/mitm/sd-card` to the root of your 3DS's SD
    card. In Luma3DS settings (hold SELECT while powering on), turn on
    **Enable game patching**.
-5. Open the manager: **Badge Arcade Manager.bat** (Windows) or
-   `python -m badge_arcade config.json` (macOS/Linux). The **Setup** tab shows
-   anything still missing.
+5. Open the manager: **Badge Arcade Manager.bat** (Windows) or `python manager.py`
+   (macOS/Linux; on Linux it needs tkinter, e.g. `sudo apt install python3-tk`).
+   The **Setup** tab shows anything still missing.
 6. Connect the 3DS (below) and open Badge Arcade.
 
 For more on macOS/Linux, see [server/README.md](server/README.md).
 
 ## Connecting the 3DS
 
-Choose one option in the manager's **Setup** tab.
+Choose one option in the manager's **Setup** tab (on macOS and Linux, use the proxy:
+the hotspot needs Windows).
 
 **PC hotspot (recommended, Windows).** Press **Turn on hotspot** and approve the
 admin prompt. On the 3DS, go to *System Settings → Internet Settings → Connection
@@ -81,7 +82,7 @@ Your save database (`server/data/badge_arcade.db`) is created automatically.
 
 After serving a week or giving free plays, **fully close and reopen Badge Arcade.**
 
-On macOS/Linux, you can do the same from the command line:
+You can also do the same from the command line:
 
 ```sh
 cd spotpass-letter

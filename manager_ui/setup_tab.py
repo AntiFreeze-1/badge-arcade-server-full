@@ -12,7 +12,7 @@ import hotspot
 import install
 import update
 
-from . import ROOT, TITLE, save_settings
+from . import ROOT, TITLE, WINDOWS, open_path, save_settings
 from .helper_tabs import HELPER_ERROR, HelperSettings
 from .services import hotspot_address
 from .widgets import BAD, GOOD, auto_wrap, hint, scrollable
@@ -40,7 +40,7 @@ class SetupTab:
 		buttons = ttk.Frame(checks)
 		buttons.pack(anchor="w", pady=(8, 0))
 		ttk.Button(buttons, text="Refresh", command=self.refresh_checklist).pack(side="left")
-		ttk.Button(buttons, text="Open project folder", command=lambda: os.startfile(ROOT)).pack(side="left", padx=6)
+		ttk.Button(buttons, text="Open project folder", command=lambda: self.open_folder(ROOT)).pack(side="left", padx=6)
 		ttk.Label(buttons, text="README.md explains where each file comes from.", style="Hint.TLabel").pack(side="left", padx=6)
 		versions = ttk.Frame(checks)
 		versions.pack(anchor="w", pady=(6, 0))
@@ -62,8 +62,9 @@ class SetupTab:
 		connect = ttk.LabelFrame(tab, text="Connect the 3DS", padding=10)
 		connect.pack(fill="both", expand=True, pady=(8, 0))
 		self.connection = tk.StringVar(value=self.settings["connection"])
-		ttk.Radiobutton(connect, text="Through this PC's Wi-Fi hotspot: no proxy settings on the 3DS (recommended)",
-			variable=self.connection, value="hotspot", command=self.change_connection).pack(anchor="w")
+		ttk.Radiobutton(connect, text="Through this PC's Wi-Fi hotspot: no proxy settings on the 3DS (recommended)"
+			if WINDOWS else "Through this PC's Wi-Fi hotspot (Windows only)", variable=self.connection, value="hotspot",
+			command=self.change_connection, state="normal" if WINDOWS else "disabled").pack(anchor="w")
 		ttk.Radiobutton(connect, text="Through a proxy: the 3DS stays on your Wi-Fi and uses this PC as its proxy",
 			variable=self.connection, value="proxy", command=self.change_connection).pack(anchor="w", pady=(2, 0))
 
@@ -254,7 +255,10 @@ class SetupTab:
 	@staticmethod
 	def open_folder(folder: Path) -> None:
 		folder.mkdir(parents=True, exist_ok=True)
-		os.startfile(folder)
+		try:
+			open_path(folder)
+		except OSError:
+			messagebox.showinfo(TITLE, f"Open this folder in your file browser:\n\n{folder}")
 
 	# --- connecting the 3DS ---
 

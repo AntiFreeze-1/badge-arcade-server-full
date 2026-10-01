@@ -120,7 +120,7 @@ def hotspot_ip() -> str:
 		import winreg
 		with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters") as key:
 			return winreg.QueryValueEx(key, "ScopeAddress")[0] or DEFAULT_HOTSPOT_IP
-	except OSError:
+	except (OSError, ImportError):  # ImportError: not Windows, so no hotspot either
 		return DEFAULT_HOTSPOT_IP
 
 

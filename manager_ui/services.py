@@ -4,6 +4,7 @@ from pathlib import Path
 import json
 import os
 import re
+import signal
 import socket
 import subprocess
 import sys
@@ -11,7 +12,7 @@ import time
 
 import hotspot
 
-from . import LOG_DIR, PID_FILE, SERVER_DIR
+from . import LOG_DIR, PID_FILE, SERVER_DIR, WINDOWS
 
 SERVER_EVENTS = re.compile(r"Ready|Login from|SpotPass|ChangeMeta|meta changes|Sent data ID|disconnected|ERROR|Traceback|Error")
 # "does not trust": the 3DS rejected the proxy's certificate, i.e. the NoSSL patch isn't active
@@ -71,6 +72,7 @@ class Service:
 		self.process = subprocess.Popen(
 			[str(python), *self.args()], cwd=SERVER_DIR, stdout=log, stderr=subprocess.STDOUT,
 			stdin=subprocess.DEVNULL, env=env, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+			start_new_session=not WINDOWS,  # its own process group, so stop() also ends what it starts (mitmdump)
 		)
 		self.remember_pid(self.process.pid)
 
@@ -80,7 +82,10 @@ class Service:
 		if not pid:
 			self.remember_pid(None)
 			return False
-		subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
+		if WINDOWS:
+			subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
+		else:
+			end_process_group(pid, self.process)
 		self.process = None
 		self.remember_pid(None)
 		return True
@@ -116,9 +121,35 @@ def hotspot_address() -> str | None:
 
 def is_python(pid: int) -> bool:
 	"""Whether a process ID still belongs to a Python process (IDs get reused)."""
+	if not WINDOWS:
+		# The state (Z: ended, waiting to be cleared up) and the program; -ww: however wide it is
+		try:
+			result = subprocess.run(["ps", "-ww", "-p", str(pid), "-o", "stat=,comm="], capture_output=True, text=True)
+		except OSError:
+			return False
+		state, _, program = result.stdout.strip().partition(" ")
+		return not state.startswith("Z") and "python" in program.lower()
 	result = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"], capture_output=True, text=True,
 		creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 	return "python" in result.stdout.lower()
+
+
+def end_process_group(pid: int, process: subprocess.Popen | None = None) -> None:
+	"""Ends a process the manager started on macOS or Linux and everything it started (its
+	process group, see Service.start): politely, then by force if it's still there after 5 s."""
+	for sig in (signal.SIGTERM, signal.SIGKILL):
+		try:
+			os.killpg(pid, sig)
+		except OSError:  # not a group of its own (started by an older manager)
+			try:
+				os.kill(pid, sig)
+			except OSError:
+				return  # already gone
+		for _ in range(50):
+			ended = (process.poll() is not None) if process else not is_python(pid)
+			if ended:
+				return
+			time.sleep(0.1)
 
 
 def console_ids(lines, seen: dict | None = None) -> dict[str, str | None]:

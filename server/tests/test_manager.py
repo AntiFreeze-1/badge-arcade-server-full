@@ -1,7 +1,10 @@
-"""The manager's Server tab: reading the 3DS's PID and NNID from the proxy's log (no window)."""
+"""The manager without a window: reading the 3DS's PID and NNID from the proxy's log, and running on macOS and Linux."""
 
 from pathlib import Path
+import json
+import socket
 import sys
+import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -33,3 +36,58 @@ def test_console_ids():
 
 def test_console_lines_in_activity():
 	assert PROXY_EVENTS.search(PID) and PROXY_EVENTS.search(NNID)
+
+
+def test_hotspot_ip_off_windows(monkeypatch):
+	"""Without Windows' registry (macOS, Linux) the hotspot address falls back instead of crashing the manager."""
+	import hotspot
+	monkeypatch.setitem(sys.modules, "winreg", None)  # "import winreg" raises ImportError
+	assert hotspot.hotspot_ip() == hotspot.DEFAULT_HOTSPOT_IP
+
+
+def test_connection_mode_off_windows(tmp_path, monkeypatch):
+	import manager_ui
+	monkeypatch.setattr(manager_ui, "SETTINGS_FILE", tmp_path / "manager_settings.json")
+	monkeypatch.setattr(manager_ui, "WINDOWS", True)
+	assert manager_ui.load_settings()["connection"] == "hotspot"
+	monkeypatch.setattr(manager_ui, "WINDOWS", False)
+	assert manager_ui.load_settings()["connection"] == "proxy"
+	manager_ui.SETTINGS_FILE.write_text(json.dumps({"connection": "hotspot", "last_tab": "Server"}))
+	assert manager_ui.load_settings() == {"connection": "proxy", "last_tab": "Server"}  # e.g. settings from a Windows PC
+
+
+def test_service_starts_and_stops_with_what_it_started(tmp_path, monkeypatch):
+	"""The proxy runs mitmdump as a process of its own: stopping the proxy must end that too."""
+	from manager_ui import services
+	monkeypatch.setattr(services, "LOG_DIR", tmp_path)
+	monkeypatch.setattr(services, "PID_FILE", tmp_path / "pids.json")
+	script = ("import subprocess, sys, time\n"
+		"child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+		"print(child.pid, flush=True)\n"
+		"time.sleep(60)\n")
+	service = services.Service("test", lambda: ["-c", script], free_port())
+	service.start()
+	try:
+		process = service.process
+		for _ in range(100):
+			if service.log.read_text().strip():
+				break
+			time.sleep(0.1)
+		child = int(service.log.read_text().split()[0])
+		assert service.pid() == process.pid and services.is_python(process.pid) and services.is_python(child)
+		assert json.loads(services.PID_FILE.read_text()) == {"test": process.pid}
+	finally:
+		assert service.stop()
+	assert process.wait(timeout=10) is not None
+	for _ in range(50):
+		if not services.is_python(child):
+			break
+		time.sleep(0.1)
+	assert not services.is_python(child)
+	assert json.loads(services.PID_FILE.read_text()) == {"test": None} and service.pid() is None
+
+
+def free_port() -> int:
+	with socket.socket() as s:
+		s.bind(("127.0.0.1", 0))
+		return s.getsockname()[1]
