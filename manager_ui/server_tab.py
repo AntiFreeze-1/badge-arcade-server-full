@@ -366,12 +366,14 @@ class ServerTab:
 				"Machines": f"{s['week']}  ({s['week_machines']} machines, {start} to {end}, for {made_for} Badge Arcade)",
 				"Next week": upcoming,
 				"Free plays": f"{plays if plays is not None else 'none'} on the game date"
-					+ ("" if plays is not None else "  (use the Free plays tab)"),
+					+ ("" if plays is not None else "  (use the Free plays tab)")
+					+ (f"  (for {'/'.join(s['playinfo_regions'])} Badge Arcade)" if s["playinfo_regions"] else ""),
 				"Game date": f"{today}" + ("  (current date)" if not s["game_date"] else ""),
 				"Maintenance": maintenance.load(self.maintenance_path()).describe(),
 				"Letter": f"\"{letter.title}\"" + ("  (downloaded)" if letter.downloaded else "  (waiting for the 3DS)")
 					if letter else "none  (use the Letters tab)",
-			}, region_problem(self.console_region, s["week_regions"]))
+			}, "\n".join(filter(None, (region_problem(self.console_region, s["playinfo_regions"], "playinfo"),
+				region_problem(self.console_region, s["week_regions"])))))
 
 		self.background("Checking what's live...", work, done)
 

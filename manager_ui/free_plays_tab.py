@@ -71,4 +71,4 @@ class FreePlaysTab:
 			messagebox.showinfo(TITLE, message + "\n\nNow fully close and reopen Badge Arcade.")
 
 		self.background("Making free plays...",
-			lambda: serve.give_free_plays(plays, self.key, date).splitlines()[0], done)
+			lambda: serve.give_free_plays(plays, self.key, date, self.console_region).splitlines()[0], done)

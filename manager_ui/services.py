@@ -165,13 +165,18 @@ def console_region(lines, seen: str | None = None) -> str | None:
 	return seen
 
 
-def region_problem(console: str | None, made_for) -> str:
-	"""What's wrong when the 3DS's Badge Arcade (console) gets a week made for other regions
-	(made_for), or "" when nothing is, or either isn't known."""
+def region_problem(console: str | None, made_for, what: str = "week") -> str:
+	"""What's wrong when the 3DS's Badge Arcade (console) gets a week, or with what="playinfo"
+	free plays, made for other regions (made_for), or "" when nothing is, or either isn't known.
+	The European game stops at "we're still doing some setup work" with the USA playinfo (issue 12)."""
 	if not console or not made_for or console in made_for:
 		return ""
-	return (f"Your 3DS runs the {console} Badge Arcade, but this week is made for {'/'.join(made_for)}, so the game "
-		f"will stop at \"we're still doing some setup work\". Serve a week made for {console} (README.md, Troubleshooting).")
+	if what == "playinfo":
+		return (f"Your 3DS runs the {console} Badge Arcade, but its free plays (playinfo) are made for {'/'.join(made_for)}, "
+			f"so the game stops at \"we're still doing some setup work\". Give free plays again (Free plays tab), which "
+			f"makes them from the {console} playinfo (README.md, Troubleshooting).")
+	return (f"Your 3DS runs the {console} Badge Arcade, but this week is made for {'/'.join(made_for)}: it has no Arcade "
+		f"Bunny text for {console}. Serve a week made for {console} (README.md, Troubleshooting).")
 
 
 def console_ids(lines, seen: dict | None = None) -> dict[str, str | None]:
