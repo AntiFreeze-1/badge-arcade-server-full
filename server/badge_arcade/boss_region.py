@@ -8,12 +8,13 @@ to the SD card" error right after "Downloading Data". The server rewrites the pr
 to the console's own Badge Arcade before sending a file. That needs the SpotPass key,
 read from boot9.bin.
 
-That makes a file one the console can save, not one made for its region. A week (data_v131)
-holds Arcade Bunny's text and the hall's start-up scripts for one region, under
-message/boss_<region>/ (3dbrew): a game from another region finds nothing for itself in it
-and stops at "we're still doing some setup work". The badges (allbadge_v131) differ between
-regions too. So the server also checks what each week and allbadge was made for, and warns
-when a 3DS of another region downloads it.
+That makes a file one the console can save, not one made for its region. The European
+game stops at "we're still doing some setup work" with the USA playinfo (play settings and
+free plays) and starts with its own (issue 12). A week (data_v131) holds Arcade Bunny's
+text and the hall's start-up scripts for one region, under message/boss_<region>/ (3dbrew),
+and the badges (allbadge_v131) differ between regions too. So the server also checks what
+each playinfo, week and allbadge was made for, and warns when a 3DS of another region
+downloads it.
 
 Container layout (big-endian):
   0x000  BOSS header, 0x28, cleartext; the AES-CTR IV is at 0x1C
@@ -39,9 +40,8 @@ TITLE_IDS = {"USA": 0x0004000000153500, "EUR": 0x0004000000153600}
 REGION_OF = {program_id: region for region, program_id in TITLE_IDS.items()}
 # A week's text for each region it was made for (see above)
 MESSAGE_FOLDER = re.compile(rb"message/boss_(USA|EUR|JPN)/")
-# The files made for one region (see above). playinfo isn't checked: serve.py makes free
-# plays from the USA one for every console, so a warning about it would have no fix
-REGIONAL_FILES = ("data_", "allbadge_")
+# The files made for one region (see above)
+REGIONAL_FILES = ("playinfo_", "data_", "allbadge_")
 
 BOSS_MAGIC = b"boss"
 BOSS_HEADER_SIZE = 0x28
@@ -215,11 +215,16 @@ class RegionConverter:
 		if not regions or region in regions:
 			return
 		made = " and ".join(sorted(regions))
-		if path.name.startswith("data_"):
+		if path.name.startswith("playinfo_"):
 			self.warn_once(("region", str(path), stamp, region),
-				"SpotPass file %s is a week made for the %s Badge Arcade, but this 3DS runs the %s one. The week has "
-				"no Arcade Bunny text or start-up scripts for %s, so the game stops at \"we're still doing some setup "
-				"work\". Serve a week made for %s (README.md, Troubleshooting)", path.name, made, region, region, region)
+				"SpotPass file %s holds the %s Badge Arcade's play settings, but this 3DS runs the %s one, which stops at "
+				"\"we're still doing some setup work\" with them. Give free plays again, which makes them from the %s "
+				"playinfo in other/ (README.md, Troubleshooting)", path.name, made, region, region)
+		elif path.name.startswith("data_"):
+			self.warn_once(("region", str(path), stamp, region),
+				"SpotPass file %s is a week made for the %s Badge Arcade, but this 3DS runs the %s one: it has no Arcade "
+				"Bunny text or start-up scripts for %s. Serve a week made for %s (README.md, Troubleshooting)",
+				path.name, made, region, region, region)
 		else:
 			self.warn_once(("region", str(path), stamp, region),
 				"SpotPass file %s holds the %s Badge Arcade's badges, but this 3DS runs the %s one. The %s SpotPass "

@@ -108,5 +108,9 @@ def test_console_region_and_problem():
 	assert console_region([]) is None
 
 	problem = region_problem("EUR", ("USA",))
-	assert "runs the EUR Badge Arcade, but this week is made for USA" in problem and "setup work" in problem
+	assert "runs the EUR Badge Arcade, but this week is made for USA" in problem and "Serve a week made for EUR" in problem
 	assert region_problem("EUR", ("EUR",)) == region_problem("EUR", ()) == region_problem(None, ("USA",)) == ""
+	# The playinfo is what stops the European game (issue 12)
+	problem = region_problem("EUR", ("USA",), "playinfo")
+	assert "its free plays (playinfo) are made for USA" in problem and "setup work" in problem
+	assert region_problem("EUR", ("EUR",), "playinfo") == ""

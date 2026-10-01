@@ -4,7 +4,8 @@
   python serve.py week dec29          Nintendo's Dec 29, 2022 week
   python serve.py week custom         the custom week (Monster Hunter, Mega Man, ...)
   python serve.py week NAME|FILE      any week from 'weeks', or a data_v131 container
-  python serve.py free-plays          10 free plays (or --plays N) for the game date (or --date)
+  python serve.py free-plays          10 free plays (or --plays N) for the game date (or --date), for the
+                                      live week's Badge Arcade region (or --region EUR)
   python serve.py letter --title T --message M [--image PIC] [--url URL]
                                       send a letter to the Notifications applet (experimental)
   python serve.py letter --remove     take the live letter down
@@ -40,8 +41,9 @@ from Crypto.Cipher import AES
 
 from free_plays import daily_campaigns, pack, set_free_plays, unpack
 import letters
-from make_letter import (BOSS_HEADER_SIZE, CONTENT_HEADER_SIZE, NEWS_PROGRAM_ID, TITLE_IDS, build_container_plain_multi,
-                         build_letter_container, build_news_payload, encrypt_container, key_from_boot9, parse_container)
+from make_letter import (BOSS_HEADER_SIZE, CONTENT_HEADER_SIZE, NEWS_PROGRAM_ID, PAYLOAD_HEADER_SIZE, TITLE_IDS,
+                         build_container_plain_multi, build_letter_container, build_news_payload, encrypt_container,
+                         key_from_boot9, parse_container)
 from repack import repack
 from custom_week import build_container, open_container, sarc_read, sarc_write, schedule_problem
 
@@ -65,6 +67,7 @@ def news_files() -> list[Path]:
 SHORT_NAMES = {"dec29": "data_v131-2022-12-29-09-40-NA.enc", "custom": "monster-hunter-mix"}
 # How keep_week_current's message starts when the rotation served the next week
 ROTATED = "The week ended, so the rotation moved on. "
+REGION_OF = {program_id: region for region, program_id in TITLE_IDS.items()}
 
 
 def boss_key() -> bytes:
@@ -159,8 +162,7 @@ def container_info(path: Path, key: bytes) -> tuple[datetime.date | None, dateti
 		# Arcade Bunny's text and the start-up scripts are in message/boss_<region>/, and a game
 		# from another region stops at "we're still doing some setup work" without its own
 		regions = {m.decode() for m in re.findall(rb"message/boss_(USA|EUR|JPN)/", body)}
-		program = {program_id: region for region, program_id in TITLE_IDS.items()}.get(
-			struct.unpack_from(">Q", body, CONTENT_HEADER_SIZE)[0])
+		program = REGION_OF.get(struct.unpack_from(">Q", body, CONTENT_HEADER_SIZE)[0])
 		_info_cache[cache_key] = (start, end, len(names), ns_id, names, tuple(sorted(regions or {program} - {None})))
 	return _info_cache[cache_key][:4]
 
@@ -346,22 +348,74 @@ def default_free_play_date() -> datetime.date:
 	return current_game_date()
 
 
-def give_free_plays(plays: int, key: bytes, date: datetime.date | None = None) -> str:
-	"""Free plays for `date` (default: the game date). The game only pays out a campaign
-	while its own date (the server's game_date) is inside it."""
+def container_regions(path: Path, key: bytes) -> tuple[str, ...]:
+	"""The Badge Arcade regions a (small) container's payloads are made out to."""
+	data = path.read_bytes()
+	body = AES.new(key, AES.MODE_CTR, nonce=data[0x1C:0x28], initial_value=1).decrypt(data[BOSS_HEADER_SIZE:])
+	regions, off = set(), CONTENT_HEADER_SIZE
+	for _ in range(struct.unpack_from(">H", body, 0x10)[0]):
+		program_id, length = struct.unpack_from(">Q", body, off)[0], struct.unpack_from(">I", body, off + 0x10)[0]
+		regions.add(REGION_OF.get(program_id))
+		off += PAYLOAD_HEADER_SIZE + length
+	return tuple(sorted(regions - {None}))
+
+
+def free_plays_region(key: bytes) -> str:
+	"""The region free plays are made for when none is given: the live week's, if it's made for one."""
+	try:
+		regions = week_regions(LIVE_WEEK, key) if LIVE_WEEK.exists() else ()
+	except (OSError, ValueError, struct.error):
+		regions = ()
+	return regions[0] if len(regions) == 1 else "USA"
+
+
+def playinfo_base(region: str, key: bytes) -> Path:
+	"""The playinfo free plays are made from. Each region's Badge Arcade needs its own: the
+	European one stops at "we're still doing some setup work" with the USA one (issue 12). So
+	it's Nintendo's USA one (PLAYINFO_BASE) for the USA, and a playinfo of that region in
+	other/ for another (README.md, European (EUR) Badge Arcade)."""
+	if region == "USA":
+		return PLAYINFO_BASE
+	for path in sorted(OTHER.glob("playinfo_v131*"), reverse=True):
+		if path in (LIVE_PLAYINFO, PLAYINFO_BASE) or path.suffix == ".tmp":
+			continue
+		try:
+			if region in container_regions(path, key):
+				return path
+		except (OSError, ValueError, struct.error):
+			continue
+	raise FileNotFoundError(f"Free plays for the {region} Badge Arcade are made from its own playinfo, and other/ has none. "
+		f"Save playinfo_v131.dat.boss from the {region} SpotPass data (its FGONLYT folder, e.g. IT/it/FGONLYT/ for EUR) "
+		f"as other/playinfo_v131-2022-11-18-EU.boss: see \"European (EUR) Badge Arcade\" in README.md.")
+
+
+def give_free_plays(plays: int, key: bytes, date: datetime.date | None = None, region: str | None = None) -> str:
+	"""Free plays for `date` (default: the game date), for a Badge Arcade region (default: the
+	live week's, see free_plays_region). The game only pays out a campaign while its own date
+	(the server's game_date) is inside it. Another region's playinfo whose free plays can't be
+	changed (a layout this doesn't know) is made live as it is, under a new SpotPass ID, so the
+	game still starts."""
 	key_file = HERE / "badge_arcade_hmac.key"
 	if not key_file.exists():
 		raise FileNotFoundError("Free plays need the game's key in spotpass-letter/badge_arcade_hmac.key. "
 			"README.md explains how to get it with find_sign_key.py.")
 	hmac_key = bytes.fromhex(key_file.read_text().strip())
 	today = date or default_free_play_date()
+	region = region or free_plays_region(key)
+	base = playinfo_base(region, key)
 	state = load_state()
 	state["free_play_round"] = (state["free_play_round"] + 1) % 100
 	# Seven daily campaigns starting the day before that date, 10:00 UTC like Nintendo's
 	start = datetime.datetime.combine(today - datetime.timedelta(days=1), datetime.time(10), datetime.UTC)
-	data = PLAYINFO_BASE.read_bytes()
+	data = base.read_bytes()
 	body, payload = unpack(data, key)
-	new_payload = set_free_plays(payload, hmac_key, plays, start, state["free_play_round"])
+	unchanged = None
+	try:
+		new_payload = set_free_plays(payload, hmac_key, plays, start, state["free_play_round"])
+	except (ValueError, struct.error) as e:
+		if base == PLAYINFO_BASE:
+			raise
+		new_payload, unchanged = payload, str(e)
 	new_id = next_ns_data_id(state)
 	serial = int(time.time())
 	out = pack(data, key, body, new_payload, new_id, serial)
@@ -372,7 +426,11 @@ def give_free_plays(plays: int, key: bytes, date: datetime.date | None = None) -
 		state.pop("letter_in_playinfo", None)
 	put_live(out, LIVE_PLAYINFO)
 	save_state(state)
-	message = f"{plays} free plays are ready for {today} (round {state['free_play_round']}, SpotPass ID {new_id:#x})."
+	if unchanged:
+		return (f"The {region} playinfo ({base.name}) is live as it is, under SpotPass ID {new_id:#x}, so the game starts, "
+			f"but its free plays couldn't be changed: {unchanged}.")
+	message = (f"{plays} free plays are ready for {today} (round {state['free_play_round']}, SpotPass ID {new_id:#x}"
+		+ (f", from the {region} playinfo" if region != "USA" else "") + ").")
 	if game_date() and today != game_date():
 		message += (f"\nThe game date is {game_date()}, so it won't pay these out until the game date is "
 			f"{today} (change it on the Server tab or in server/config.json).")
@@ -467,9 +525,13 @@ def mark_letter_downloaded(when: datetime.datetime | None = None) -> letters.Sav
 
 
 def playinfo_campaigns(key: bytes) -> list[tuple[int, datetime.datetime, datetime.datetime, int]]:
+	"""The live playinfo's free-play campaigns (none if its layout isn't known, see daily_campaigns)."""
 	_, payload = unpack(LIVE_PLAYINFO.read_bytes(), key)
 	when = lambda t: datetime.datetime.fromtimestamp(t, datetime.UTC)
-	return [(cid, when(begin), when(end), plays) for cid, _kind, begin, end, plays in daily_campaigns(payload)]
+	try:
+		return [(cid, when(begin), when(end), plays) for cid, _kind, begin, end, plays in daily_campaigns(payload)]
+	except (ValueError, struct.error, OverflowError, OSError):
+		return []
 
 
 # ----- status -----
@@ -489,6 +551,7 @@ def status(key: bytes) -> dict:
 		"week": live_name or "unknown",
 		"week_dates": (start, end),
 		"week_regions": week_regions(LIVE_WEEK, key),
+		"playinfo_regions": container_regions(LIVE_PLAYINFO, key),
 		"week_machines": machines,
 		"week_id": week_id,
 		"playinfo_id": struct.unpack_from(">I", unpack(LIVE_PLAYINFO.read_bytes(), key)[0], CONTENT_HEADER_SIZE + 0x14)[0],
@@ -514,6 +577,7 @@ def main() -> int:
 	plays = sub.add_parser("free-plays", help="hand out free plays for the game date")
 	plays.add_argument("--plays", type=int, default=10)
 	plays.add_argument("--date", type=datetime.date.fromisoformat, help="day to give them on (default: the game date)")
+	plays.add_argument("--region", choices=sorted(TITLE_IDS), help="the 3DS's Badge Arcade (default: the live week's region)")
 	letter = sub.add_parser("letter", help="send a letter to the Notifications applet (experimental)")
 	letter.add_argument("--title", help="at most 31 characters")
 	letter.add_argument("--message", help="the text; \\n for a new line")
@@ -543,7 +607,7 @@ def main() -> int:
 			return 1
 		print(serve_week(found, key))
 	elif args.command == "free-plays":
-		print(give_free_plays(args.plays, key, args.date))
+		print(give_free_plays(args.plays, key, args.date, args.region))
 	elif args.command == "letter":
 		message = args.message_file.read_text(encoding="utf-8") if args.message_file else (args.message or "").replace("\\n", "\n")
 		saved = letters.SavedLetter("", args.title or "", message, args.url, args.region,
@@ -553,8 +617,8 @@ def main() -> int:
 		s = status(key)
 		print(f"Machines: {s['week']}, {s['week_machines']} machines, {s['week_dates'][0]} to {s['week_dates'][1]} "
 			f"(SpotPass ID {s['week_id']:#x}), for {'/'.join(s['week_regions']) or '?'} Badge Arcade")
-		print(f"Free plays: SpotPass ID {s['playinfo_id']:#x}, "
-			+ ", ".join(f"{b:%b %d}: {p}" for _, b, _, p in s["campaigns"]))
+		print(f"Free plays: SpotPass ID {s['playinfo_id']:#x}, for {'/'.join(s['playinfo_regions']) or '?'} Badge Arcade, "
+			+ (", ".join(f"{b:%b %d}: {p}" for _, b, _, p in s["campaigns"]) or "campaigns unknown"))
 		print(f"Game date: {s['game_date'] or 'current date'} ({s['current_date']})")
 		live = s["letter"]
 		print(f"Letter: \"{live.title}\", sent {live.sent}" + (f", downloaded {live.downloaded}" if live.downloaded else

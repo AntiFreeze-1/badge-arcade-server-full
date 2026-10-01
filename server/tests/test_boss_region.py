@@ -169,7 +169,7 @@ def test_server_warns_when_a_3ds_gets_another_regions_files(boss_server, monkeyp
 	(boss_dir / "data_v131.dat.boss").write_bytes(container([(TITLE_IDS["USA"], week("USA"))]))
 	(warning,) = warnings_for(eur + "data_v131.dat")
 	assert "is a week made for the USA Badge Arcade, but this 3DS runs the EUR one" in warning
-	assert "we're still doing some setup work" in warning and "Serve a week made for EUR" in warning
+	assert "no Arcade Bunny text" in warning and "Serve a week made for EUR" in warning
 	assert warnings_for(eur + "data_v131.dat") == []  # once
 	assert warnings_for(usa + "data_v131.dat") == []
 
@@ -179,9 +179,17 @@ def test_server_warns_when_a_3ds_gets_another_regions_files(boss_server, monkeyp
 	assert warnings_for(eur + "data_v131.dat") == []
 	assert "made for the EUR Badge Arcade, but this 3DS runs the USA one" in warnings_for(usa + "data_v131.dat")[0]
 
-	# The badges too; the free plays aren't checked (they're always made from the USA playinfo)
+	# The badges too
 	(boss_dir / "allbadge_v131.dat.boss").write_bytes(container([(TITLE_IDS["USA"], b"badges")]))
 	(warning,) = warnings_for(eur + "allbadge_v131.dat")
 	assert "holds the USA Badge Arcade's badges, but this 3DS runs the EUR one" in warning
+
+	# And the play settings: the European game stops at "still doing some setup work" with the
+	# USA playinfo and starts with its own (issue 12)
 	(boss_dir / "playinfo_v131.dat.boss").write_bytes(container([(TITLE_IDS["USA"], b"plays")]))
+	(warning,) = warnings_for(eur + "playinfo_v131.dat")
+	assert "holds the USA Badge Arcade's play settings, but this 3DS runs the EUR one" in warning
+	assert "we're still doing some setup work" in warning and "Give free plays again" in warning
+	(boss_dir / "playinfo_v131.dat.boss").write_bytes(container([(TITLE_IDS["EUR"], b"plays"), (NEWS, b"letter")]))
+	os.utime(boss_dir / "playinfo_v131.dat.boss", (1, 2_000_000_100))
 	assert warnings_for(eur + "playinfo_v131.dat") == []

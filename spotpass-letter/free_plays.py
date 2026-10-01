@@ -49,7 +49,13 @@ def pack(data: bytes, key: bytes, body: bytearray, payload: bytes, ns_data_id: i
 
 
 def daily_campaigns(payload: bytes) -> list[tuple[int, int, int, int, int]]:
+	"""The free-play campaigns. ValueError when the payload doesn't have them where Nintendo's
+	USA playinfo does (another region's playinfo can be laid out differently)."""
+	if len(payload) < DAILY_COUNT_OFFSET + 4 + 32:
+		raise ValueError("the playinfo is too short to have free-play campaigns")
 	count = struct.unpack_from("<I", payload, DAILY_COUNT_OFFSET)[0]
+	if not 1 <= count <= 31 or DAILY_COUNT_OFFSET + 4 + count * DAILY_ENTRY.size > len(payload) - 32:
+		raise ValueError(f"the playinfo's free-play campaigns aren't where they're expected ({count} of them at {DAILY_COUNT_OFFSET:#x})")
 	return [DAILY_ENTRY.unpack_from(payload, DAILY_COUNT_OFFSET + 4 + i * DAILY_ENTRY.size) for i in range(count)]
 
 
