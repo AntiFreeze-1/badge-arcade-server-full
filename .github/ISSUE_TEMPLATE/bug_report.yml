@@ -1,0 +1,77 @@
+name: Bug report
+description: Something doesn't work with the server, the manager or the game.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Before you start, check [Troubleshooting](https://github.com/AntiFreeze-1/badge-arcade-server-full#troubleshooting).
+
+        **Never attach Nintendo files or keys** (SpotPass files, `boot9.bin`, `nex-keys.txt`, dumps).
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Shown in the manager's title bar and Setup tab, or in `version.txt`.
+      placeholder: "2.2.2"
+    validations:
+      required: true
+  - type: dropdown
+    id: region
+    attributes:
+      label: Game region
+      options: [USA, EUR, JPN, Not sure]
+    validations:
+      required: true
+  - type: dropdown
+    id: connection
+    attributes:
+      label: How the 3DS connects
+      options: [PC hotspot, Proxy, Not connected yet]
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: PC operating system
+      options: [Windows, macOS, Linux]
+    validations:
+      required: true
+  - type: checkboxes
+    id: files
+    attributes:
+      label: Files you've added
+      description: Tick the ones that are in place.
+      options:
+        - label: "`allbadge_v131.dat.boss` in `other/`"
+        - label: "`data_v131-*.enc` week files in `other/`"
+        - label: "`playinfo_v131-*.enc` in `other/`"
+        - label: "`boot9.bin` in `spotpass-letter/`"
+        - label: "`nex-keys.txt` in `server/`"
+        - label: The Setup tab shows everything as done
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead (with any error code, e.g. 022-2534).
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: What you've tried
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        The last lines of `server/logs/server.log` and `server/logs/proxy.log` (or the Server tab's activity).
+        They show your 3DS's PID and NNID: replace them with `XXXX` if you'd rather not share them.
+      render: text
+  - type: checkboxes
+    id: no-nintendo-files
+    attributes:
+      label: Nothing from Nintendo
+      options:
+        - label: I haven't attached any SpotPass files, keys or dumps.
+          required: true

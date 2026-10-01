@@ -65,15 +65,18 @@ the change first or together.
 
 ```sh
 python install.py --packages
-pip install -r server/requirements-dev.txt ruff
+pip install -r server/requirements-dev.txt
 python -m pytest     # every suite (server, SpotPass tools, helper)
 ruff check .
+coverage run -m pytest && coverage report   # which lines the tests run
 ```
 
 A single suite also runs from its folder, as CI does: `cd server && python -m pytest tests`.
 The helper's tests that need Nintendo's archived files and a console's key skip themselves
-without them. CI (`.github/workflows/tests.yml`) runs on Windows and Linux with Python 3.12
-and 3.13.
+without them. CI (`.github/workflows/tests.yml`) runs on Windows, macOS and Linux with Python
+3.12, 3.13 and 3.14, and shows the coverage on each run's summary page. ruff checks for syntax
+errors, unused names and likely bugs (`pyproject.toml` lists the rules); a false alarm gets a
+`# noqa: <rule>` with the reason.
 
 The code is indented with tabs, lines are up to 140 characters (`.editorconfig` sets this
 up in most editors), and needs Python 3.12. Comments and docstrings say what something is

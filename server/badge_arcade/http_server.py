@@ -301,9 +301,9 @@ class RequestHandler(BaseHTTPRequestHandler):
 				"reconnect the 3DS to the internet while the proxy is running, and open it again.", game_server_id
 			)
 			self.send_body(404, (
-				'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-				"<errors><error><cause></cause><code>0008</code><message>Not Found</message></error></errors>"
-			).encode(), "application/xml;charset=UTF-8")
+				b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+				b"<errors><error><cause></cause><code>0008</code><message>Not Found</message></error></errors>"
+			), "application/xml;charset=UTF-8")
 			return
 
 		password = self.storage.get_nex_password(pid)

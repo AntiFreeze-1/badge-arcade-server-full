@@ -101,7 +101,7 @@ def sarc_write(files: dict[str, bytes], align: int) -> bytes:
 	data_off = header_size + (-header_size % align)
 	nodes = bytearray()
 	data = bytearray()
-	for (name, content), h, name_off in zip(entries, hashes, name_offsets):
+	for (_name, content), h, name_off in zip(entries, hashes, name_offsets):
 		data += bytes(-len(data) % align)
 		nodes += struct.pack("<IIII", h, 0x01000000 | name_off // 4, len(data), len(data) + len(content))
 		data += content
