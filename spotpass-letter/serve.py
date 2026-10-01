@@ -40,7 +40,7 @@ from Crypto.Cipher import AES
 
 from free_plays import daily_campaigns, pack, set_free_plays, unpack
 import letters
-from make_letter import (BOSS_HEADER_SIZE, CONTENT_HEADER_SIZE, NEWS_PROGRAM_ID, build_container_plain_multi,
+from make_letter import (BOSS_HEADER_SIZE, CONTENT_HEADER_SIZE, NEWS_PROGRAM_ID, TITLE_IDS, build_container_plain_multi,
                          build_letter_container, build_news_payload, encrypt_container, key_from_boot9, parse_container)
 from repack import repack
 from custom_week import build_container, open_container, sarc_read, sarc_write, schedule_problem
@@ -133,6 +133,7 @@ class Week:
 	end: datetime.date | None = None   # exclusive
 	machines: int = 0
 	setups: list[str] | None = None    # custom weeks: the machine setups in it
+	regions: tuple[str, ...] = ()      # the Badge Arcade regions it's made for (see week_regions)
 
 	def covers(self, date: datetime.date | None) -> bool:
 		return bool(date and self.start and self.start <= date < self.end)
@@ -155,15 +156,31 @@ def container_info(path: Path, key: bytes) -> tuple[datetime.date | None, dateti
 			parse = lambda s: datetime.datetime.strptime(s.decode(), "%y%m%d").date()
 			start, end = parse(match.group(1)), parse(match.group(2))
 		names = sorted({m.decode() for m in re.findall(rb"pc/ci/([A-Za-z0-9_]+)\.cib\.szs", body)})
-		_info_cache[cache_key] = (start, end, len(names), ns_id, names)
+		# Arcade Bunny's text and the start-up scripts are in message/boss_<region>/, and a game
+		# from another region stops at "we're still doing some setup work" without its own
+		regions = {m.decode() for m in re.findall(rb"message/boss_(USA|EUR|JPN)/", body)}
+		program = {program_id: region for region, program_id in TITLE_IDS.items()}.get(
+			struct.unpack_from(">Q", body, CONTENT_HEADER_SIZE)[0])
+		_info_cache[cache_key] = (start, end, len(names), ns_id, names, tuple(sorted(regions or {program} - {None})))
 	return _info_cache[cache_key][:4]
+
+
+def _cached(path: Path, key: bytes, index: int):
+	container_info(path, key)
+	stat = path.stat()
+	return _info_cache[(str(path), stat.st_mtime_ns, stat.st_size)][index]
 
 
 def week_machine_names(path: Path, key: bytes) -> list[str]:
 	"""The machine setups in a data_v131 container."""
-	container_info(path, key)
-	stat = path.stat()
-	return _info_cache[(str(path), stat.st_mtime_ns, stat.st_size)][4]
+	return _cached(path, key, 4)
+
+
+def week_regions(path: Path, key: bytes) -> tuple[str, ...]:
+	"""The Badge Arcade regions a week is made for: those it has Arcade Bunny's text for (the
+	server warns when a 3DS of another region downloads it). Converting it for another region's
+	console, as the server does, doesn't change them."""
+	return _cached(path, key, 5)
 
 
 def list_weeks(key: bytes) -> list[Week]:
@@ -176,7 +193,7 @@ def list_weeks(key: bytes) -> list[Week]:
 		if not machines:
 			continue
 		label = f"Nintendo, week of {start}" if start else f"Nintendo, {path.name}"
-		weeks.append(Week(path.name, label, path, False, start, end, machines))
+		weeks.append(Week(path.name, label, path, False, start, end, machines, regions=week_regions(path, key)))
 	weeks.sort(key=lambda w: w.start or datetime.date.min)
 	for meta_path in sorted(CUSTOM_DIR.glob("*.json")):
 		path = meta_path.with_suffix(".boss")
@@ -184,7 +201,8 @@ def list_weeks(key: bytes) -> list[Week]:
 			continue
 		meta = json.loads(meta_path.read_text(encoding="utf-8"))
 		start, end, machines, _ = container_info(path, key)
-		weeks.append(Week(path.stem, f"Custom: {meta['name']}", path, True, start, end, machines, meta.get("setups")))
+		weeks.append(Week(path.stem, f"Custom: {meta['name']}", path, True, start, end, machines, meta.get("setups"),
+			week_regions(path, key)))
 	return weeks
 
 
@@ -470,6 +488,7 @@ def status(key: bytes) -> dict:
 	return {
 		"week": live_name or "unknown",
 		"week_dates": (start, end),
+		"week_regions": week_regions(LIVE_WEEK, key),
 		"week_machines": machines,
 		"week_id": week_id,
 		"playinfo_id": struct.unpack_from(">I", unpack(LIVE_PLAYINFO.read_bytes(), key)[0], CONTENT_HEADER_SIZE + 0x14)[0],
@@ -516,7 +535,7 @@ def main() -> int:
 
 	if args.command == "weeks":
 		for w in list_weeks(key):
-			print(f"  {w.key:40} {w.label}, {w.machines} machines, {w.start} to {w.end}")
+			print(f"  {w.key:40} {w.label}, {w.machines} machines, {w.start} to {w.end}, for {'/'.join(w.regions) or '?'}")
 	elif args.command == "week":
 		found = find_week(args.week, key)
 		if not found:
@@ -533,7 +552,7 @@ def main() -> int:
 	elif args.command == "status":
 		s = status(key)
 		print(f"Machines: {s['week']}, {s['week_machines']} machines, {s['week_dates'][0]} to {s['week_dates'][1]} "
-			f"(SpotPass ID {s['week_id']:#x})")
+			f"(SpotPass ID {s['week_id']:#x}), for {'/'.join(s['week_regions']) or '?'} Badge Arcade")
 		print(f"Free plays: SpotPass ID {s['playinfo_id']:#x}, "
 			+ ", ".join(f"{b:%b %d}: {p}" for _, b, _, p in s["campaigns"]))
 		print(f"Game date: {s['game_date'] or 'current date'} ({s['current_date']})")

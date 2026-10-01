@@ -135,3 +135,53 @@ def test_server_converts_for_the_console_region(boss_server, monkeypatch):
 	# Files that aren't containers still go out as they are
 	(boss_dir / "plain.dat").write_bytes(b"hello")
 	assert get(port, "/boss/p01/nsa/J6la9Kj8iqTvAPOq/data/plain.dat")[1] == b"hello"
+
+
+def week(region: str) -> bytes:
+	"""A payload with a week's text for one region, the way it sits in Nintendo's weeks."""
+	return b"SARC....Schedule.xml\0sharc/221229-230105.sarc\0" + f"message/boss_{region}/{region[:2]}en/boss/slotA00/StartUp.msbf".encode() + b"\0" * 9
+
+
+def test_made_for():
+	usa_week = container([(TITLE_IDS["USA"], week("USA"))])
+	assert boss_region.made_for(usa_week, KEY) == {"USA"}
+	# Converting a week for another console doesn't change what it was made for: its text stays USA
+	assert boss_region.made_for(retarget(usa_week, KEY, TITLE_IDS["EUR"]), KEY) == {"USA"}
+	assert boss_region.made_for(container([(TITLE_IDS["EUR"], week("EUR"))]), KEY) == {"EUR"}
+	assert boss_region.made_for(container([(TITLE_IDS["USA"], week("USA") + week("EUR"))]), KEY) == {"USA", "EUR"}
+	# Anything else (allbadge, playinfo): the program it's made out to
+	assert boss_region.made_for(container([(TITLE_IDS["EUR"], b"badges")]), KEY) == {"EUR"}
+	assert boss_region.made_for(container([(NEWS, b"letter")]), KEY) == set()
+	with pytest.raises(ValueError):
+		boss_region.made_for(usa_week, bytes(16))
+
+
+def test_server_warns_when_a_3ds_gets_another_regions_files(boss_server, monkeypatch, caplog):
+	port, boss_dir, regions = boss_server
+	monkeypatch.setattr(regions, "key", lambda: KEY)
+	eur, usa = "/boss/p01/nsa/J6la9Kj8iqTvAPOq/data/", "/boss/p01/nsa/OvbmGLZ9senvgV3K/data/"
+
+	def warnings_for(path: str) -> list[str]:
+		caplog.clear()
+		assert get(port, path)[0] == 200
+		return [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+
+	(boss_dir / "data_v131.dat.boss").write_bytes(container([(TITLE_IDS["USA"], week("USA"))]))
+	(warning,) = warnings_for(eur + "data_v131.dat")
+	assert "is a week made for the USA Badge Arcade, but this 3DS runs the EUR one" in warning
+	assert "we're still doing some setup work" in warning and "Serve a week made for EUR" in warning
+	assert warnings_for(eur + "data_v131.dat") == []  # once
+	assert warnings_for(usa + "data_v131.dat") == []
+
+	# An EUR week: right for an EUR 3DS, wrong for a USA one
+	(boss_dir / "data_v131.dat.boss").write_bytes(container([(TITLE_IDS["EUR"], week("EUR"))]))
+	os.utime(boss_dir / "data_v131.dat.boss", (1, 2_000_000_000))
+	assert warnings_for(eur + "data_v131.dat") == []
+	assert "made for the EUR Badge Arcade, but this 3DS runs the USA one" in warnings_for(usa + "data_v131.dat")[0]
+
+	# The badges too; the free plays aren't checked (they're always made from the USA playinfo)
+	(boss_dir / "allbadge_v131.dat.boss").write_bytes(container([(TITLE_IDS["USA"], b"badges")]))
+	(warning,) = warnings_for(eur + "allbadge_v131.dat")
+	assert "holds the USA Badge Arcade's badges, but this 3DS runs the EUR one" in warning
+	(boss_dir / "playinfo_v131.dat.boss").write_bytes(container([(TITLE_IDS["USA"], b"plays")]))
+	assert warnings_for(eur + "playinfo_v131.dat") == []

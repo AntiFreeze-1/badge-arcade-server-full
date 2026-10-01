@@ -8,6 +8,13 @@ to the SD card" error right after "Downloading Data". The server rewrites the pr
 to the console's own Badge Arcade before sending a file. That needs the SpotPass key,
 read from boot9.bin.
 
+That makes a file one the console can save, not one made for its region. A week (data_v131)
+holds Arcade Bunny's text and the hall's start-up scripts for one region, under
+message/boss_<region>/ (3dbrew): a game from another region finds nothing for itself in it
+and stops at "we're still doing some setup work". The badges (allbadge_v131) differ between
+regions too. So the server also checks what each week and allbadge was made for, and warns
+when a 3DS of another region downloads it.
+
 Container layout (big-endian):
   0x000  BOSS header, 0x28, cleartext; the AES-CTR IV is at 0x1C
   0x028  AES-128-CTR (keyslot 0x38 normal key, IV = header[0x1C:0x28] + 00000001):
@@ -17,6 +24,7 @@ Container layout (big-endian):
 """
 
 import hashlib
+import re
 import struct
 import threading
 from pathlib import Path
@@ -28,6 +36,12 @@ logger = logging.getLogger(__name__)
 
 # Nintendo Badge Arcade's title IDs (JPN's isn't known, so its files are sent as they are)
 TITLE_IDS = {"USA": 0x0004000000153500, "EUR": 0x0004000000153600}
+REGION_OF = {program_id: region for region, program_id in TITLE_IDS.items()}
+# A week's text for each region it was made for (see above)
+MESSAGE_FOLDER = re.compile(rb"message/boss_(USA|EUR|JPN)/")
+# The files made for one region (see above). playinfo isn't checked: serve.py makes free
+# plays from the USA one for every console, so a warning about it would have no fix
+REGIONAL_FILES = ("data_", "allbadge_")
 
 BOSS_MAGIC = b"boss"
 BOSS_HEADER_SIZE = 0x28
@@ -60,36 +74,58 @@ def ctr(key: bytes, iv12: bytes, data: bytes) -> bytes:
 	return AES.new(key, AES.MODE_CTR, nonce=iv12, initial_value=1).encrypt(data)
 
 
-def retarget(data: bytes, key: bytes, program_id: int) -> bytes | None:
-	"""The container with every Badge Arcade payload made out to program_id, or None when
-	nothing needs to change. Other programs' payloads are left alone. A changed payload
-	gets a new hash and a zeroed signature, like the containers spotpass-letter builds."""
+def decrypt(data: bytes, key: bytes) -> bytearray:
+	"""A container's content header and payloads, decrypted."""
 	if data[:4] != BOSS_MAGIC or len(data) < BOSS_HEADER_SIZE + CONTENT_HEADER_SIZE:
 		raise ValueError("not a SpotPass (BOSS) container")
-	iv = data[0x1C:0x28]
-	body = bytearray(ctr(key, iv, data[BOSS_HEADER_SIZE:]))
+	body = bytearray(ctr(key, data[0x1C:0x28], data[BOSS_HEADER_SIZE:]))
 	if hashlib.sha256(bytes(body[:0x12]) + b"\x00\x00").digest() != body[0x12:0x32]:
 		raise ValueError("content header hash mismatch (wrong key?)")
+	return body
 
-	others = set(TITLE_IDS.values()) - {program_id}
-	changed = False
+
+def payload_spans(body: bytearray):
+	"""(header offset, program ID, payload start, payload length) of each payload in a decrypted container."""
 	off = CONTENT_HEADER_SIZE
 	for _ in range(struct.unpack_from(">H", body, 0x10)[0]):
 		if off + PAYLOAD_HEADER_SIZE > len(body):
 			raise ValueError("payload header past the end of the container")
-		pid = struct.unpack_from(">Q", body, off)[0]
-		length = struct.unpack_from(">I", body, off + 0x10)[0]
 		start = off + PAYLOAD_HEADER_SIZE
+		length = struct.unpack_from(">I", body, off + 0x10)[0]
+		yield off, struct.unpack_from(">Q", body, off)[0], start, length
+		off = start + length
+
+
+def retarget(data: bytes, key: bytes, program_id: int) -> bytes | None:
+	"""The container with every Badge Arcade payload made out to program_id, or None when
+	nothing needs to change. Other programs' payloads are left alone. A changed payload
+	gets a new hash and a zeroed signature, like the containers spotpass-letter builds."""
+	body = decrypt(data, key)
+	others = set(TITLE_IDS.values()) - {program_id}
+	changed = False
+	for off, pid, start, length in list(payload_spans(body)):
 		if pid in others:
 			struct.pack_into(">Q", body, off, program_id)
 			payload = bytes(body[start:start + length])
 			body[off + 0x1C:off + 0x3C] = hashlib.sha256(bytes(body[off:off + 0x1C]) + b"\x00\x00" + payload).digest()
 			body[off + 0x3C:off + PAYLOAD_HEADER_SIZE] = bytes(0x100)
 			changed = True
-		off = start + length
 	if not changed:
 		return None
-	return data[:BOSS_HEADER_SIZE] + ctr(key, iv, bytes(body))
+	return data[:BOSS_HEADER_SIZE] + ctr(key, data[0x1C:0x28], bytes(body))
+
+
+def made_for(data: bytes, key: bytes) -> set[str]:
+	"""The regions a container's Badge Arcade payloads were made for: for a week, the regions
+	it has Arcade Bunny's text for; for anything else, the region of the program it's made out
+	to. Empty when it has no Badge Arcade payload (e.g. only a letter)."""
+	body = decrypt(data, key)
+	regions = set()
+	for _, pid, start, length in payload_spans(body):
+		if pid in REGION_OF:
+			found = {match.decode() for match in MESSAGE_FOLDER.findall(body, start, start + length)}
+			regions |= found or {REGION_OF[pid]}
+	return regions
 
 
 class RegionConverter:
@@ -100,6 +136,7 @@ class RegionConverter:
 		self.key_path = key_path
 		self._key: tuple[tuple, bytes | None] | None = None
 		self._cache: dict[tuple, bytes | None] = {}
+		self._made_for: dict[str, tuple[tuple, set[str] | None]] = {}  # file path -> (its version, regions)
 		self._warned: set = set()
 		self._lock = threading.Lock()
 
@@ -155,3 +192,36 @@ class RegionConverter:
 			self._cache = {k: v for k, v in self._cache.items() if k[0] != str(path) or k[3] != region}
 			self._cache[stamp] = converted
 			return converted
+
+	def check(self, path: Path, region: str) -> None:
+		"""Warns, once for each version of the file, when a week or allbadge was made for another
+		region than the 3DS downloading it (see the top of this file). Needs the key, like convert."""
+		if not path.name.startswith(REGIONAL_FILES) or region not in (*TITLE_IDS, "JPN"):
+			return
+		key = self.key()
+		if key is None:
+			return  # convert() says what's missing
+		with self._lock:
+			stat = path.stat()
+			stamp = (stat.st_mtime_ns, stat.st_size)
+			known = self._made_for.get(str(path))
+			if known is None or known[0] != stamp:
+				try:
+					regions = made_for(path.read_bytes(), key)
+				except ValueError:
+					regions = None  # not a container (convert() says so)
+				known = self._made_for[str(path)] = (stamp, regions)
+		regions = known[1]
+		if not regions or region in regions:
+			return
+		made = " and ".join(sorted(regions))
+		if path.name.startswith("data_"):
+			self.warn_once(("region", str(path), stamp, region),
+				"SpotPass file %s is a week made for the %s Badge Arcade, but this 3DS runs the %s one. The week has "
+				"no Arcade Bunny text or start-up scripts for %s, so the game stops at \"we're still doing some setup "
+				"work\". Serve a week made for %s (README.md, Troubleshooting)", path.name, made, region, region, region)
+		else:
+			self.warn_once(("region", str(path), stamp, region),
+				"SpotPass file %s holds the %s Badge Arcade's badges, but this 3DS runs the %s one. The %s SpotPass "
+				"data has its own %s: use that one with %s weeks (README.md, Troubleshooting)",
+				path.name, made, region, region, path.name, region)

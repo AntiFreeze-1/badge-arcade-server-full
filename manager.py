@@ -71,6 +71,7 @@ class Manager(SetupTab, ServerTab, ServeWeekTab, FreePlaysTab, LettersTab, Helpe
 		self.live_week: str | None = None  # the label of the week the 3DS gets (see refresh_status)
 		self.next_week: str | None = None  # the key of the week the rotation serves next, if it's on
 		self.status_day = None  # the game date refresh_status last saw (see watch_game_date)
+		self.console_region: str | None = None  # the 3DS's Badge Arcade region, from the server's log
 		self.log_offsets = {}
 		add_styles(self)
 

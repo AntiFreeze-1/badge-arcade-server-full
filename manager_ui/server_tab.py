@@ -14,7 +14,8 @@ from badge_arcade.config import lan_address, load_config
 from badge_arcade.storage import Storage
 
 from . import LOG_DIR, TITLE
-from .services import PROXY_EVENTS, SERVER_EVENTS, Service, console_ids, port_open, public_host_fixed, tidy
+from .services import (PROXY_EVENTS, SERVER_EVENTS, Service, console_ids, console_region, port_open, public_host_fixed,
+                       region_problem, tidy)
 from .widgets import BAD, GOOD, IDLE, WARN, hint, text_box
 
 LIVE_ROWS = ("Machines", "Next week", "Free plays", "Game date", "Maintenance", "Letter")
@@ -53,6 +54,7 @@ class ServerTab:
 			text="Badge Arcade can't log in until the proxy sees the 3DS's PID or NNID (error 022-2534).")
 		self.console_hint.grid(row=2, column=0, columnspan=2, sticky="w")
 		self.read_console_ids()
+		self.read_console_region()
 		self.saved_console = {"pid": False, "nnid": False}
 		# Once the window runs: its thread can only hand the result over then
 		self.after(100, self.check_saved_console)
@@ -146,6 +148,14 @@ class ServerTab:
 			tail = f.read()
 		self.log_offsets[self.proxy.log] = start + len(tail)
 		self.console_seen = console_ids(tail.decode("utf-8", "replace").splitlines())
+
+	def read_console_region(self) -> None:
+		"""Which region's Badge Arcade the 3DS runs, from the last SpotPass download in the server's log."""
+		if not self.server.log.exists():
+			return
+		with open(self.server.log, "rb") as f:
+			f.seek(max(0, self.server.log.stat().st_size - 2_000_000))
+			self.console_region = console_region(f.read().decode("utf-8", "replace").splitlines())
 
 	def check_saved_console(self) -> None:
 		"""Every 10 seconds: whether the server's database already has a PID it can give the 3DS
@@ -342,6 +352,7 @@ class ServerTab:
 			plays = next((p for _, b, e, p in s["campaigns"] if today and b.date() <= today < e.date()), None)
 			letter = s["letter"]
 			following = s["next_week"] if s["rotation"]["on"] else None
+			made_for = "/".join(s["week_regions"]) or "?"
 			self.live_week = s["week"]
 			self.next_week = following.key if following else None
 			self.mark_live_week()
@@ -352,7 +363,7 @@ class ServerTab:
 			else:
 				upcoming = f"{following.label}, on {end}"
 			self.show_live({
-				"Machines": f"{s['week']}  ({s['week_machines']} machines, {start} to {end})",
+				"Machines": f"{s['week']}  ({s['week_machines']} machines, {start} to {end}, for {made_for} Badge Arcade)",
 				"Next week": upcoming,
 				"Free plays": f"{plays if plays is not None else 'none'} on the game date"
 					+ ("" if plays is not None else "  (use the Free plays tab)"),
@@ -360,7 +371,7 @@ class ServerTab:
 				"Maintenance": maintenance.load(self.maintenance_path()).describe(),
 				"Letter": f"\"{letter.title}\"" + ("  (downloaded)" if letter.downloaded else "  (waiting for the 3DS)")
 					if letter else "none  (use the Letters tab)",
-			})
+			}, region_problem(self.console_region, s["week_regions"]))
 
 		self.background("Checking what's live...", work, done)
 
@@ -395,6 +406,10 @@ class ServerTab:
 			if service is self.server:
 				for line in lines:
 					self.check_letter_downloaded(line)
+				region = console_region(lines, self.console_region)
+				if region != self.console_region:
+					self.console_region = region
+					self.refresh_status()  # says if the live week is for another region
 			else:
 				self.console_seen = console_ids(lines, self.console_seen)
 			if not self.show_all_logs.get():
