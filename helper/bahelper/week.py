@@ -112,12 +112,13 @@ def write_schedule(xml: str, week: str, lineup: list[list[str]], days: list[date
 
 def redate(top: dict[str, bytes], new_start: datetime.date) -> dict[str, bytes]:
 	"""Moves a week to new dates: its schedule and the name of its machine archive
-	(sharc/YYMMDD-YYMMDD.sarc) shift by the same number of days. (From serve.py.)"""
+	(sharc/YYMMDD-YYMMDD.sarc, or YYMMDD_YYMMDD in the European weeks) shift by the same
+	number of days. (From serve.py.)"""
 	top = dict(top)
 	week_name = next(name for name in top if name.startswith("sharc/"))
-	match = re.fullmatch(r"sharc/(\d{6})-(\d{6})\.sarc", week_name)
+	match = re.fullmatch(r"sharc/(\d{6})([-_])(\d{6})\.sarc", week_name)
 	parse = lambda text: datetime.datetime.strptime(text, "%y%m%d").date()
-	old_start, old_end = parse(match.group(1)), parse(match.group(2))
+	old_start, sep, old_end = parse(match.group(1)), match.group(2), parse(match.group(3))
 	delta = new_start - old_start
 	new_end = old_end + delta
 
@@ -127,10 +128,10 @@ def redate(top: dict[str, bytes], new_start: datetime.date) -> dict[str, bytes]:
 
 	schedule = top["Schedule.xml"].decode("utf-8")
 	schedule = re.sub(r"(<Date(?:Start|Expire)Text>)(\d{8})(<)", shift, schedule)
-	schedule = schedule.replace(f"{old_start:%y%m%d}-{old_end:%y%m%d}", f"{new_start:%y%m%d}-{new_end:%y%m%d}")
+	schedule = schedule.replace(f"{old_start:%y%m%d}{sep}{old_end:%y%m%d}", f"{new_start:%y%m%d}{sep}{new_end:%y%m%d}")
 	schedule = schedule.replace(f"Boss{old_start:%Y%m%d}_{old_end:%Y%m%d}", f"Boss{new_start:%Y%m%d}_{new_end:%Y%m%d}")
 	top["Schedule.xml"] = schedule.encode("utf-8")
-	top[f"sharc/{new_start:%y%m%d}-{new_end:%y%m%d}.sarc"] = top.pop(week_name)
+	top[f"sharc/{new_start:%y%m%d}{sep}{new_end:%y%m%d}.sarc"] = top.pop(week_name)
 	return top
 
 

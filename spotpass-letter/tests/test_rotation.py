@@ -20,10 +20,11 @@ A, B, C = "data_v131-2022-12-08-09-40-NA.enc", "data_v131-2022-12-15-09-40-NA.en
 
 
 def week_file(path: Path, start: datetime.date, machines: list[str], crashes: bool = False,
-		program_id: int = make_letter.TITLE_IDS["USA"], text_for: str | None = None) -> Path:
+		program_id: int = make_letter.TITLE_IDS["USA"], text_for: str | None = None, sep: str = "-") -> Path:
 	"""A week of seven days from start, like Nintendo's, with these machine setups. With
 	crashes, its schedule has more machines than the game can take (serve_week refuses it).
-	With text_for, it has Arcade Bunny's text for that region, like Nintendo's weeks."""
+	With text_for, it has Arcade Bunny's text for that region, like Nintendo's weeks. sep is
+	the one in its machine archive's name: "_" in the European weeks (sharc/230203_230210.sarc)."""
 	end = start + 7 * DAY
 	prizes = (f"    <FileItem>\n      <DateStartText>{start:%Y%m%d}</DateStartText>\n      <DateExpireText>{end:%Y%m%d}"
 		"</DateExpireText>\n      <RegexSetName>PrizeCollection</RegexSetName>\n    </FileItem>\n")
@@ -32,7 +33,7 @@ def week_file(path: Path, start: datetime.date, machines: list[str], crashes: bo
 	if crashes:
 		xml = xml.replace("<Key>DefaultStageName000</Key>", "<Key>DefaultStageName1028</Key>")
 	setups = custom_week.sarc_write({f"pc/ci/{name}.cib.szs": b"setup" for name in machines}, 0x80)
-	files = {"Schedule.xml": xml.encode(), f"sharc/{start:%y%m%d}-{end:%y%m%d}.sarc": setups}
+	files = {"Schedule.xml": xml.encode(), f"sharc/{start:%y%m%d}{sep}{end:%y%m%d}.sarc": setups}
 	if text_for:
 		files[f"message/boss_{text_for}/{text_for[:2]}en/boss/slotA00/StartUp.msbf"] = b"flow"
 	payload = custom_week.sarc_write(files, 0x80)
@@ -166,4 +167,29 @@ def test_weeks_know_which_region_they_are_for(game, tmp_path):
 	# Serving it (moved to the game date, under a new ID) keeps its text, and so its region
 	serve.serve_week(serve.find_week("data_v131-2022-11-18-EU.boss", KEY), KEY)
 	assert serve.week_regions(serve.LIVE_WEEK, KEY) == ("EUR",)
+	assert serve.container_info(serve.LIVE_WEEK, KEY)[0] == game["date"] - DAY
+
+
+def test_european_weeks_are_moved_to_the_game_date(game, tmp_path):
+	"""The European weeks name their machine archive sharc/YYMMDD_YYMMDD.sarc (issue 12).
+	Their dates have to be read too, or they're served with their 2023 schedule, which the
+	game treats as over."""
+	name = "data_v131-2023-02-03-01-40-EU.enc"
+	week_file(tmp_path / "other" / name, datetime.date(2023, 2, 3), ["E_1", "E_2"],
+		program_id=make_letter.TITLE_IDS["EUR"], text_for="EUR", sep="_")
+	week = serve.find_week(name, KEY)
+	assert (week.start, week.end) == (datetime.date(2023, 2, 3), datetime.date(2023, 2, 10))
+
+	message = serve.serve_week(week, KEY)
+	assert "to include the game date" in message
+	start, end, _, _ = serve.container_info(serve.LIVE_WEEK, KEY)
+	assert (start, end) == (game["date"] - DAY, game["date"] + 6 * DAY)
+	top = custom_week.sarc_read(custom_week.open_container(serve.LIVE_WEEK.read_bytes(), KEY)[1])
+	assert f"sharc/{start:%y%m%d}_{end:%y%m%d}.sarc" in top  # keeps the European name
+	schedule = top["Schedule.xml"].decode()
+	assert f"<DateStartText>{start:%Y%m%d}<" in schedule and "2023" not in schedule
+	assert live_machines() == ["E_1", "E_2"] and serve.week_regions(serve.LIVE_WEEK, KEY) == ("EUR",)
+
+	# And when the game date moves past it, it's moved again like any other week
+	assert "to include the game date" in next_day(game, 7)
 	assert serve.container_info(serve.LIVE_WEEK, KEY)[0] == game["date"] - DAY

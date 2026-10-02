@@ -6,7 +6,7 @@ import json
 
 from bahelper import boss, formats as f, sarc, yaz0
 from bahelper.serving import Server, Settings
-from bahelper.week import WeekBuilder, new_custom_machine, registered, schedule_problem
+from bahelper.week import WeekBuilder, new_custom_machine, redate, registered, schedule_problem
 from bahelper.workspace import WeekPlan, Workspace
 
 from .test_shapes_and_makers import star_picture
@@ -67,3 +67,13 @@ def test_build_and_serve_custom_week(archive, key, tmp_path):
 	assert server.live_id() == 0x700 and server.next_id() == 0x701
 	assert server.allocate_id() == 0x701
 	assert json.loads(server_state.read_text())["last_ns_data_id"] == 0x701
+
+
+def test_redate_keeps_the_european_archive_name():
+	"""The European weeks name their machine archive sharc/YYMMDD_YYMMDD.sarc (issue 12)."""
+	schedule = ("<Schedule><Items><FileItem><DateStartText>20230203</DateStartText>"
+		"<DateExpireText>20230210</DateExpireText><Name>230203_230210</Name></FileItem></Items></Schedule>")
+	top = redate({"Schedule.xml": schedule.encode(), "sharc/230203_230210.sarc": b"machines"}, datetime.date(2026, 10, 1))
+	assert top["sharc/261001_261008.sarc"] == b"machines" and "sharc/230203_230210.sarc" not in top
+	assert top["Schedule.xml"].decode() == schedule.replace("20230203", "20261001").replace("20230210", "20261008").replace(
+		"230203_230210", "261001_261008")
